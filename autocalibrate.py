@@ -9,6 +9,22 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from numpy import linspace
 import argparse
+from imutils.object_detection import non_max_suppression
+from numpy.linalg import inv
+from math import log10, floor
+
+def inside(r, q):
+    rx, ry, rw, rh = r
+    qx, qy, qw, qh = q
+    return rx > qx and ry > qy and rx + rw < qx + qw and ry + rh < qy + qh
+
+
+def draw_detections(img, rects, thickness = 1):
+    for x, y, w, h in rects:
+        # the HOG detector returns slightly larger rectangles than the real objects.
+        # so we slightly shrink the rectangles to get a nicer output.
+        pad_w, pad_h = int(0.15*w), int(0.05*h)
+        cv.rectangle(img, (x+pad_w, y+pad_h), (x+w-pad_w, y+h-pad_h), (0, 255, 0), thickness)
 
 def inverse_homogeneoux_matrix(M):
     R = M[0:3, 0:3]
@@ -30,6 +46,58 @@ def transform_to_matplotlib_frame(cMo, X, inverse=False):
         return M.dot(inverse_homogeneoux_matrix(cMo).dot(X))
     else:
         return M.dot(cMo.dot(X))
+
+def round_to_1(x, sig=2):
+    if x == 0:
+        return 0
+    else:
+        return round(x, sig-int(floor(log10(abs(x))))-1)
+
+def GetWindowWithAxis(Size_of_w, physical_size):
+    int_size = int(Size_of_w*0.5)
+    center = (int_size, int_size)
+    px_of_meter = int(Size_of_w/physical_size)
+    img = np.zeros((Size_of_w, Size_of_w, 3), np.uint8)
+    img = cv.line(img, center, (center[0], center[1]+px_of_meter), (0,0,255), 3)
+    img = cv.line(img, center, (center[0]-px_of_meter, center[1]), (0,255,0), 3)
+    return img
+
+def PrintLocalization(Lmap, pick, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec):
+    Lmap_localized = Lmap.copy()
+    px_of_meter = Size_of_w/physical_size
+    rot, jaco = cv.Rodrigues(ref_rvec)
+    #ext = np.vstack((np.hstack((rot, ref_tvec)), np.array([0, 0, 0, 1])))
+    #print(ext)
+    #ext_inv = inv(ext)
+    human_height=1.7
+    for (xA, yA, xB, yB) in pick:
+        head_pt = ((xA+xB)*0.5, min(yA, yB)) # (u1, v1)
+        bottom_pt = ((xA+xB)*0.5, max(yA, yB)) # (u2, v2)
+
+        # according to the formula: s1=1.7*r33+s2, s2=1.7*(r23-v1*r33)/(v1-v2)
+        #s2 = 1.7*(rot[1][2]-head_pt[1]*rot[2][2])/(head_pt[1]-bottom_pt[1])
+        #print("s2: ", s2)
+        #s1 = 1.7*rot[2][2]+s2
+
+        rs = rot[0][2]*ref_tvec[0][0]+rot[1][2]*ref_tvec[1][0]+rot[2][2]*ref_tvec[2][0]
+        ls = rot[0][2]*bottom_pt[0]+rot[1][2]*bottom_pt[1]+rot[2][2]*1
+        s2 = rs/ls
+
+        img_pt = np.array([[bottom_pt[0]], [bottom_pt[1]], [1]])
+        #print("zz: ", s2*img_pt-ref_tvec)
+        #print("tra: ", cv.transpose(rot))
+        result = np.matmul(cv.transpose(rot), s2*img_pt-ref_tvec)
+        print("result: ", result)
+
+        center = (Size_of_w*0.5-result[1]*px_of_meter, result[0]*px_of_meter+Size_of_w*0.5)     
+        print("world XY: ", result[0], result[1])    
+        print("window XY: ", center[0], center[1])
+        #print("result: ", result)
+        pchar = "[" + str(round_to_1(result[0][0])) + ", " + str(round_to_1(result[1][0])) + "]"
+
+        Lmap_localized = cv.circle(Lmap_localized, center, 5, (255,0,0), thickness=3, lineType=8, shift=0) 
+        cv.putText(Lmap_localized, pchar, center, cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1) 
+    return Lmap_localized
 
 def create_camera_model(camera_matrix, width, height, scale_focal, draw_frame_axis=True):
     fx = camera_matrix[0,0]
@@ -231,6 +299,16 @@ pattern_points = np.zeros((np.prod(pattern_size), 3), np.float32)
 pattern_points[:, :2] = np.indices(pattern_size).T.reshape(-1, 2)
 pattern_points *= square_size
 term = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_COUNT, 30, 0.1)
+FinishCalibration = False
+ref_rvec=None
+ref_tvec=None
+
+def draw(img, corners, imgpts):
+    corner = tuple(corners[0].ravel())
+    img = cv.line(img, corner, tuple(imgpts[0].ravel()), (0,0,255), 3)
+    img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0,255,0), 3)
+    img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255,0,0), 3)
+    return img
 
 
 #line in form of y=ax+c , so a tuple (a, c)
@@ -247,11 +325,18 @@ def find_two_line_intersection(line1, line2):
         return (True, (d-c)/(a-b), (a*d-b*c)/(a-b))
 
 
+calib_corners = None
+calib_imgpt = None
+axis = np.float32([[0.5,0,0], [0,0.5,0], [0,0,-0.5]]).reshape(-1,3)
 frame_num=0
+hog = cv.HOGDescriptor()
+hog.setSVMDetector( cv.HOGDescriptor_getDefaultPeopleDetector() )
 while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
     frame_num = frame_num+1
     start = time.time()
     ret, frame = cap.read()
+    if ret == False:
+        break
     #print("cap.read() took {} seconds.".format(time.time() - start))
     start = time.time()
     #cv2.putText(frame, str(datetime.datetime.now()), (210, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 2, 2)
@@ -340,12 +425,10 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
         # plt.show(block=True)
 
 
-
- 
-    frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-    extrinsics = None
-
-    if frame.any():
+    if frame.any() and not FinishCalibration:
+        fitting_error=[]
+        frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+        extrinsics = None
         CanStillFound = True
         DetectedChessBoardnum=0
         while CanStillFound:
@@ -369,8 +452,28 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
                 # calculate camera distortion
                 h, w = frame_gray.shape[:2]  # TODO: use imquery call to retrieve results
                 #rms, camera_matrix, dist_coefs, rvecs, tvecs = cv.calibrateCamera(obj_points, img_points, (w, h), cameraMatrix=camera_matrix_manual, distCoeffs=dist_coefs_manual, flags=cv.CALIB_USE_INTRINSIC_GUESS+ cv.CALIB_FIX_K1+ cv.CALIB_FIX_K2+ cv.CALIB_FIX_K3+ cv.CALIB_FIX_K4+ cv.CALIB_FIX_K5)
-                #print(obj_points)
+                #print(img_points[0][0])
                 returnval, rvecs, tvecs = cv.solvePnP(np.array(obj_points), np.array(img_points),camera_matrix_manual, dist_coefs_manual )
+
+                if img_points[0][0][0] > 640:
+                    ref_rvec = rvecs
+                    ref_tvec = tvecs
+                    print("Calibration result is: ", ref_rvec, ref_tvec)
+                    imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                    calib_corners = corners
+                    calib_imgpt = imgpts2
+                    frame = draw(frame,calib_corners,calib_imgpt)
+
+                imgpts, jac = cv.projectPoints(np.array(obj_points), rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                #print(imgpts[0][0])
+
+                totalfittingerror=0
+                for zz in range(len(imgpts)):
+                    totalfittingerror = totalfittingerror + math.sqrt(math.pow(imgpts[zz][0][0]-img_points[0][zz][0], 2)+math.pow(imgpts[zz][0][1]-img_points[0][zz][1], 2))
+                fitting_error.append(totalfittingerror)
+                #print("totalfittingerror: ", totalfittingerror)
+
+
 
                 #print("\nRMS:", rms)
                 #print("camera matrix:\n", camera_matrix)
@@ -380,7 +483,7 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
                 # to the world coordinate space, that is, a real position of the calibration pattern
                 # from chessboard (0, 0, 0) to 
                 print("rotation: ",  [x* 180.0 / math.pi for x in rvecs])
-                print("translation: ", tvecs)     
+                print("translation: ", cv.transpose(tvecs))     
 
                 ext = cv.hconcat([np.array(cv.transpose(rvecs)), np.array(cv.transpose(tvecs))])
                 print("ext: ", ext)
@@ -441,10 +544,43 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
             ax.set_ylabel('z')
             ax.set_zlabel('-y')
             ax.set_title('Extrinsic Parameters Visualization')
+
+            for item in fitting_error:
+                print("fitting error: ", item)
       
-            cv.imshow('chessboard corners', frame)
-            cv.waitKey(0)   
-            plt.show()               
+            FinishCalibration = True
+            # cv.imshow('chessboard corners', frame)
+            # cv.waitKey(0)   
+            # plt.show()       
+
+    if frame.any() and FinishCalibration:
+        frame = draw(frame,calib_corners,calib_imgpt)
+        resized_frame = cv.resize(frame, (0,0), fx=0.5, fy=0.5) 
+        rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(8,8), scale=1.05)
+        # found_filtered = []
+        # for ri, r in enumerate(rect):
+        #     for qi, q in enumerate(rect):
+        #         if ri != qi and inside(r, q):
+        #             break
+        #     else:
+        #         found_filtered.append(r)
+        # draw_detections(resized_frame, found_filtered, 3)
+        rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
+        pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
+
+        # draw the final bounding boxes
+        for (xA, yA, xB, yB) in pick:
+            cv.rectangle(resized_frame, (xA, yA), (xB, yB), (0, 255, 0), 2)        
+
+        bigger_frame = cv.resize(resized_frame, (0,0), fx=2, fy=2) 
+        cv.imshow('pedestrian detection', bigger_frame)        
+
+        Size_of_w=500
+        physical_size=30
+        Lmap = GetWindowWithAxis(Size_of_w, physical_size)
+        Lmap_localized = PrintLocalization(Lmap, pick, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec)
+
+        cv.imshow('localization', Lmap_localized)        
 
     #cv.imshow('fgmask',resized_fgmask)
     #cv.imshow('axis',resized_fitline)
