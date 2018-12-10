@@ -14,7 +14,7 @@ from numpy.linalg import inv
 from math import log10, floor
 
 IsEachFrameDebug = False
-hog_threshold = 0.8
+hog_threshold = 0.9
 
 def inside(r, q):
     rx, ry, rw, rh = r
@@ -483,15 +483,15 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
                 #print(img_points[0][0])
                 returnval, rvecs, tvecs = cv.solvePnP(np.array(obj_points), np.array(img_points),camera_matrix_manual, dist_coefs_manual )
 
-                if img_points[0][0][0] > 640:
-                    ref_rvec = rvecs
-                    ref_tvec = tvecs
-                    print("Calibration result is: ", ref_rvec, ref_tvec)
-                    print(axis)
-                    imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
-                    calib_corners = corners
-                    calib_imgpt = imgpts2
-                    frame = draw(frame,calib_corners,calib_imgpt)
+                #if img_points[0][0][0] > 640:
+                ref_rvec = rvecs
+                ref_tvec = tvecs
+                print("Calibration result is: ", ref_rvec, ref_tvec)
+                print(axis)
+                imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                calib_corners = corners
+                calib_imgpt = imgpts2
+                frame = draw(frame,calib_corners,calib_imgpt)
 
                 imgpts, jac = cv.projectPoints(np.array(obj_points), rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                 #print(imgpts[0][0])
@@ -586,7 +586,7 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
     if frame.any() and FinishCalibration:
         frame = draw(frame,calib_corners,calib_imgpt)
         resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 
-        rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(8,8), scale=1.05)
+        rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(32,32), scale=1.05)
         
         found_filtered = []
         # kill bb that has low weight
@@ -612,8 +612,8 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
         bigger_frame = cv.resize(resized_frame, (0,0), fx=ratio, fy=ratio) 
         #cv.imshow('pedestrian detection', bigger_frame)        
 
-        Size_of_w=500
-        physical_size=30
+        Size_of_w=600
+        physical_size=20
         Lmap = GetWindowWithAxis(Size_of_w, physical_size)
         Lmap_localized, bigger_frame_reproject = PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners)
 
