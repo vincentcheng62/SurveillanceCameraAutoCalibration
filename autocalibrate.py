@@ -13,6 +13,9 @@ from imutils.object_detection import non_max_suppression
 from numpy.linalg import inv
 from math import log10, floor
 
+IsEachFrameDebug = False
+hog_threshold = 0.8
+
 def inside(r, q):
     rx, ry, rw, rh = r
     qx, qy, qw, qh = q
@@ -62,42 +65,67 @@ def GetWindowWithAxis(Size_of_w, physical_size):
     img = cv.line(img, center, (center[0]-px_of_meter, center[1]), (0,255,0), 3)
     return img
 
-def PrintLocalization(Lmap, pick, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec):
+def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners):
     Lmap_localized = Lmap.copy()
-    px_of_meter = Size_of_w/physical_size
+    bigger_frame_reproject = bigger_frame.copy()
+
+    px_of_meter = 1.0*Size_of_w/physical_size
     rot, jaco = cv.Rodrigues(ref_rvec)
     #ext = np.vstack((np.hstack((rot, ref_tvec)), np.array([0, 0, 0, 1])))
     #print(ext)
     #ext_inv = inv(ext)
     human_height=1.7
     for (xA, yA, xB, yB) in pick:
-        head_pt = ((xA+xB)*0.5, min(yA, yB)) # (u1, v1)
-        bottom_pt = ((xA+xB)*0.5, max(yA, yB)) # (u2, v2)
+        head_pt = [(xA+xB)*0.5*ratio, min(yA, yB)*ratio] # (u1, v1)
+        bottom_pt = [(xA+xB)*0.5*ratio, max(yA, yB)*ratio] # (u2, v2)
+        bigger_frame_reproject = cv.circle(bigger_frame_reproject, (int(bottom_pt[0]), int(bottom_pt[1])), 5, (0,255,0), thickness=3, lineType=8, shift=0) 
+        bigger_frame_reproject = cv.circle(bigger_frame_reproject, (int(head_pt[0]), int(head_pt[1])), 5, (0,255,0), thickness=3, lineType=8, shift=0) 
 
+        print("bottom_pt: ", bottom_pt)
+        bp = np.zeros((1, 2), np.float32)
+        bp[0][0] = bottom_pt[0]
+        bp[0][1] = bottom_pt[1]
+        #print("calib_corners: ", calib_corners[0])
+        dst = cv.undistortPoints(bp.reshape(-1,1,2).astype(np.float32), camera_matrix_manual, dist_coefs_manual)
+        bottom_pt = dst[0][0]
         # according to the formula: s1=1.7*r33+s2, s2=1.7*(r23-v1*r33)/(v1-v2)
         #s2 = 1.7*(rot[1][2]-head_pt[1]*rot[2][2])/(head_pt[1]-bottom_pt[1])
-        #print("s2: ", s2)
+        print("bottom_pt after undistort: ", bottom_pt)
+        #bottom_pt_center_normalized = (bottom_pt[0]-camera_matrix_manual[0][2], bottom_pt[1]-camera_matrix_manual[1][2])
+        #print("bottom_pt_center_normalized: ", bottom_pt_center_normalized)        
         #s1 = 1.7*rot[2][2]+s2
 
-        rs = rot[0][2]*ref_tvec[0][0]+rot[1][2]*ref_tvec[1][0]+rot[2][2]*ref_tvec[2][0]
-        ls = rot[0][2]*bottom_pt[0]+rot[1][2]*bottom_pt[1]+rot[2][2]*1
-        s2 = rs/ls
+        #print("ref_tvec: ", ref_tvec[0][0], ref_tvec[1][0], ref_tvec[2][0])
+        Tz = rot[0][2]*ref_tvec[0][0]+rot[1][2]*ref_tvec[1][0]+rot[2][2]*ref_tvec[2][0]
+        dz = rot[0][2]*bottom_pt[0]+rot[1][2]*bottom_pt[1]+rot[2][2]*1
+        s2 = Tz/dz
+        print("s2: ", s2)
 
         img_pt = np.array([[bottom_pt[0]], [bottom_pt[1]], [1]])
         #print("zz: ", s2*img_pt-ref_tvec)
         #print("tra: ", cv.transpose(rot))
         result = np.matmul(cv.transpose(rot), s2*img_pt-ref_tvec)
-        print("result: ", result)
+        print("result: ",cv.transpose(result))
 
-        center = (Size_of_w*0.5-result[1]*px_of_meter, result[0]*px_of_meter+Size_of_w*0.5)     
-        print("world XY: ", result[0], result[1])    
+        center = (int(Size_of_w*0.5-result[1][0]*px_of_meter), int(result[0][0]*px_of_meter+Size_of_w*0.5))     
+        print("world XY: ", result[0][0], result[1][0])    
         print("window XY: ", center[0], center[1])
         #print("result: ", result)
         pchar = "[" + str(round_to_1(result[0][0])) + ", " + str(round_to_1(result[1][0])) + "]"
 
         Lmap_localized = cv.circle(Lmap_localized, center, 5, (255,0,0), thickness=3, lineType=8, shift=0) 
         cv.putText(Lmap_localized, pchar, center, cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1) 
-    return Lmap_localized
+
+        #Project the resulting 3d point onto 2d image again for comfirmation.
+        imgpts, jac = cv.projectPoints(np.array([[result[0][0], result[1][0], result[2][0]], [0.0, 0.0, 0.0]]), ref_rvec, ref_tvec, camera_matrix_manual, dist_coefs_manual)
+        intpt =  (int(imgpts[0][0][0]), int(imgpts[0][0][1]))
+        print("intpt: ", intpt)
+
+        if intpt[0]>0 and intpt[0]<bigger_frame_reproject.shape[1] and intpt[1]>0 and intpt[1]<bigger_frame_reproject.shape[0]:
+            bigger_frame_reproject = cv.circle(bigger_frame_reproject, intpt, 5, (255,0,0), thickness=3, lineType=8, shift=0) 
+            cv.putText(bigger_frame_reproject, pchar, (intpt[0], intpt[1]+30), cv.FONT_HERSHEY_COMPLEX, 0.8, (255,0,0), 2)         
+
+    return Lmap_localized, bigger_frame_reproject
 
 def create_camera_model(camera_matrix, width, height, scale_focal, draw_frame_axis=True):
     fx = camera_matrix[0,0]
@@ -459,6 +487,7 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
                     ref_rvec = rvecs
                     ref_tvec = tvecs
                     print("Calibration result is: ", ref_rvec, ref_tvec)
+                    print(axis)
                     imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                     calib_corners = corners
                     calib_imgpt = imgpts2
@@ -553,10 +582,18 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
             # cv.waitKey(0)   
             # plt.show()       
 
+    ratio = 2.0
     if frame.any() and FinishCalibration:
         frame = draw(frame,calib_corners,calib_imgpt)
-        resized_frame = cv.resize(frame, (0,0), fx=0.5, fy=0.5) 
+        resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 
         rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(8,8), scale=1.05)
+        
+        found_filtered = []
+        # kill bb that has low weight
+        for qz in range(len(rects)):
+            if weight[qz][0] > hog_threshold:
+                found_filtered.append(rects[qz])
+
         # found_filtered = []
         # for ri, r in enumerate(rect):
         #     for qi, q in enumerate(rect):
@@ -565,22 +602,27 @@ while(cap.isOpened() and len(line_db)<line_db_need_to_collect):
         #     else:
         #         found_filtered.append(r)
         # draw_detections(resized_frame, found_filtered, 3)
-        rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
-        pick = non_max_suppression(rects, probs=None, overlapThresh=0.65)
+        found_filtered = np.array([[x, y, x + w, y + h] for (x, y, w, h) in found_filtered])
+        pick = non_max_suppression(found_filtered, probs=None, overlapThresh=0.65)
 
         # draw the final bounding boxes
         for (xA, yA, xB, yB) in pick:
             cv.rectangle(resized_frame, (xA, yA), (xB, yB), (0, 255, 0), 2)        
 
-        bigger_frame = cv.resize(resized_frame, (0,0), fx=2, fy=2) 
-        cv.imshow('pedestrian detection', bigger_frame)        
+        bigger_frame = cv.resize(resized_frame, (0,0), fx=ratio, fy=ratio) 
+        #cv.imshow('pedestrian detection', bigger_frame)        
 
         Size_of_w=500
         physical_size=30
         Lmap = GetWindowWithAxis(Size_of_w, physical_size)
-        Lmap_localized = PrintLocalization(Lmap, pick, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec)
+        Lmap_localized, bigger_frame_reproject = PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners)
 
-        cv.imshow('localization', Lmap_localized)        
+        cv.imshow('pedestrian detection', bigger_frame_reproject)        
+        cv.imshow('localization', Lmap_localized)      
+
+        #Pending for debug
+        if IsEachFrameDebug and len(rects)>0:
+            cv.waitKey(5000)
 
     #cv.imshow('fgmask',resized_fgmask)
     #cv.imshow('axis',resized_fitline)
