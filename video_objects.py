@@ -63,10 +63,42 @@ ref_rvec=None
 ref_tvec=None
 calib_corners = None
 calib_imgpt = None
+ptgrid = None
 axis = np.float32([[0.5,0,0], [0,0.5,0], [0,0,-0.5]]).reshape(-1,3)
+grid = np.float32([[0.5,-0.5,0], [0.5,0,0], [0.5,0.5,0],
+                   [0,-0.5,0], [0,0,0], [0,0.5,0],
+                   [-0.5,-0.5,0], [-0.5,0,0], [-0.5,0.5,0],
+                   [-1,-0.5,0], [-1,0,0], [-1,0.5,0],
+                   [-1.5,-0.5,0], [-1.5,0,0], [-1.5,0.5,0],
+                   [-2,-0.5,0], [-2,0,0], [-2,0.5,0],
+                   [-2.5,-0.5,0], [-2.5,0,0], [-2.5,0.5,0],
+                   [-3,-0.5,0], [-3,0,0], [-3,0.5,0],
+                   [-3.5,-0.5,0], [-3.5,0,0], [-3.5,0.5,0],
+                   [-4,-0.5,0], [-4,0,0], [-4,0.5,0],
+                   [-4.5,-0.5,0], [-4.5,0,0], [-4.5,0.5,0],
+                   [-5,-0.5,0], [-5,0,0], [-5,0.5,0],
+                   [-5.5,-0.5,0], [-5.5,0,0], [-5.5,0.5,0],
+                   [-6,-0.5,0], [-6,0,0], [-6,0.5,0],
+                   [-6.5,-0.5,0], [-6.5,0,0], [-6.5,0.5,0],
+                   [-7,-0.5,0], [-7,0,0], [-7,0.5,0],
+                   [-7.5,-0.5,0], [-7.5,0,0], [-7.5,0.5,0],
+                   [-8,-0.5,0], [-8,0,0], [-8,0.5,0],
+                   [-8.5,-0.5,0], [-8.5,0,0], [-8.5,0.5,0],
+                   [-9,-0.5,0], [-9,0,0], [-9,0.5,0],
+                   [-9.5,-0.5,0], [-9.5,0,0], [-9.5,0.5,0],
+                   [-10,-0.5,0], [-10,0,0], [-10,0.5,0],
+                   [-10.5,-0.5,0], [-10.5,0,0], [-10.5,0.5,0],
+                   [-11,-0.5,0], [-11,0,0], [-11,0.5,0],
+                   [-11.5,-0.5,0], [-11.5,0,0], [-11.5,0.5,0],
+                   [-12,-0.5,0], [-12,0,0], [-12,0.5,0],
+                   [-12.5,-0.5,0], [-12.5,0,0], [-12.5,0.5,0],
+                   [-13,-0.5,0], [-13,0,0], [-13,0.5,0],
+                   [-13.5,-0.5,0], [-13.5,0,0], [-13.5,0.5,0],
+                   [-14,-0.5,0], [-14,0,0], [-14,0.5,0],
+                   [-14.5,-0.5,0], [-14.5,0,0], [-14.5,0.5,0]] ).reshape(-1,3)
 
 # name of the opencv window
-cv_window_name = "SSD Mobilenet"
+cv_window_name = "SSD Mobilenet" 
 
 # labels AKA classes.  The class IDs returned
 # are the indices into this list
@@ -91,7 +123,7 @@ NETWORK_IMAGE_WIDTH = 300
 NETWORK_IMAGE_HEIGHT = 300
 
 # the minimal score for a box to be shown
-DEFAULT_INIT_MIN_SCORE = 60
+DEFAULT_INIT_MIN_SCORE = 20
 min_score_percent = DEFAULT_INIT_MIN_SCORE
 
 # the resize_window arg will modify these if its specified on the commandline
@@ -142,6 +174,56 @@ def GetWindowWithAxis(Size_of_w, physical_size):
     img = cv.line(img, center, (center[0]-px_of_meter, center[1]), (0,255,0), 3)
     return img
 
+def GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, method=0):
+    s2=1
+    r13=rot[0][2]
+    r23=rot[1][2]
+    r33=rot[2][2]
+    t1=ref_tvec[0][0]
+    t2=ref_tvec[1][0]
+    t3=ref_tvec[2][0]
+    u1=head_pt[0]
+    v1=head_pt[1]
+    u2=bottom_pt[0]
+    v2=bottom_pt[1]
+    h=-1.7
+
+    if method==0:
+        # Assume the world coord of the bottom pt (X, Y, Z=0), then there is unique solution for s2
+        Tz = r13*t1+r23*t2+r33*t3
+        dz = r13*u2+r23*v2+r33*1.0
+        s2 = Tz/dz
+        print("s2: ", s2)
+
+    else:
+        # Use head-pt and bottom-pt to approximate the (X, Y, Z) of the bottom pt in which Z != 0
+        # Need to minimize f where f(s1, s2) = Norm((s1u1-s2u2-hr13, s1v1-s2v2-hr23, s1-s2-hr33))
+        # That means, want to find a pair of (s1, s2) such that their world coord (X1, Y1, Z1), (X2, Y2, Z2)
+        # can achieve X1 close to X2, Y1 close to Y2, Z1-Z2 close to h=1.7m normal human height
+        # Taking df/ds1 and df/ds2=0 and solve for s1 and s2
+        # Since u1=u2,...
+
+
+        Df = np.zeros((2, 2), np.float32)
+        Df[0, 0] = 2*(u1*u1+v1*v1+1)
+        Df[0, 1] = -2*(u1*u1+v1*v2+1)
+        Df[1, 0] = -2*(u1*u1+v1*v2+1)
+        Df[1, 1] = 2*(u1*u1+v2*v2+1)
+        print("Df: ", Df)
+
+        Zero = np.zeros((2, 1), np.float32)
+        Zero[0, 0] = 2*h*(u1*r13+v1*r23+r33)
+        Zero[1, 0] = -2*h*(u1*r13+v2*r23+r33)
+        print("Zero: ", Zero)
+
+        Answer = inv(Df)*Zero
+        print("Answer: ", Answer)
+        s1=Answer[0][0]
+        s2=Answer[1][0]
+        print("s1: ", s1, ", s2: ", s2)
+
+    return s2
+
 def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners):
     Lmap_localized = Lmap.copy()
     bigger_frame_reproject = bigger_frame.copy()
@@ -173,28 +255,26 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
         #s1 = 1.7*rot[2][2]+s2
 
         #print("ref_tvec: ", ref_tvec[0][0], ref_tvec[1][0], ref_tvec[2][0])
-        Tz = rot[0][2]*ref_tvec[0][0]+rot[1][2]*ref_tvec[1][0]+rot[2][2]*ref_tvec[2][0]
-        dz = rot[0][2]*bottom_pt[0]+rot[1][2]*bottom_pt[1]+rot[2][2]*1
-        s2 = Tz/dz
-        print("s2: ", s2)
+        AlgMethod=1  # 0 : assume z=0, 1: assume height=1.7
+        s2 = GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, AlgMethod)
 
         img_pt = np.array([[bottom_pt[0]], [bottom_pt[1]], [1]])
         #print("zz: ", s2*img_pt-ref_tvec)
         #print("tra: ", cv.transpose(rot))
-        result = np.matmul(cv.transpose(rot), s2*img_pt-ref_tvec)
-        print("result: ",cv.transpose(result))
+        result2 = np.matmul(cv.transpose(rot), s2*img_pt-ref_tvec)
+        print("result: ",cv.transpose(result2))
 
-        center = (int(Size_of_w*0.5-result[1][0]*px_of_meter), int(result[0][0]*px_of_meter+Size_of_w*0.5))     
-        print("world XY: ", result[0][0], result[1][0])    
+        center = (int(Size_of_w*0.5-result2[1][0]*px_of_meter), int(result2[0][0]*px_of_meter+Size_of_w*0.5))     
+        print("world XY: ", result2[0][0], result2[1][0])    
         print("window XY: ", center[0], center[1])
         #print("result: ", result)
-        pchar = "[" + str(round_to_1(result[0][0])) + ", " + str(round_to_1(result[1][0])) + "]"
+        pchar = "[" + str(round_to_1(result2[0][0])) + ", " + str(round_to_1(result2[1][0])) + "]"
 
         Lmap_localized = cv.circle(Lmap_localized, center, 5, (255,0,0), thickness=3, lineType=8, shift=0) 
         cv.putText(Lmap_localized, pchar, center, cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1) 
 
         #Project the resulting 3d point onto 2d image again for comfirmation.
-        imgpts, jac = cv.projectPoints(np.array([[result[0][0], result[1][0], result[2][0]], [0.0, 0.0, 0.0]]), ref_rvec, ref_tvec, camera_matrix_manual, dist_coefs_manual)
+        imgpts, jac = cv.projectPoints(np.array([[result2[0][0], result2[1][0], result2[2][0]], [0.0, 0.0, 0.0]]), ref_rvec, ref_tvec, camera_matrix_manual, dist_coefs_manual)
         intpt =  (int(imgpts[0][0][0]), int(imgpts[0][0][1]))
         print("intpt: ", intpt)
 
@@ -432,11 +512,16 @@ def overlay_on_image(display_image, object_info):
     # label text above the box
     cv2.putText(display_image, label_text, (label_left, label_bottom), cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_text_color, 1)
 
-def draw(img, corners, imgpts):
+def draw_axis_and_ptgrid(img, corners, imgpts, ptgrid):
     corner = tuple(corners[0].ravel())
     img = cv.line(img, corner, tuple(imgpts[0].ravel()), (0,0,255), 3)
     img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0,255,0), 3)
     img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255,0,0), 3)
+
+    # Also draw a point grid in the z-plane for debug purpose
+    for pt in ptgrid:
+        img = cv.circle(img, tuple(pt.ravel()), 4, (0,255,0), thickness=2, lineType=8, shift=0) 
+
     return img
 
 #return False if found invalid args or True if processed ok
@@ -505,7 +590,7 @@ def handle_args():
 #    be used to peform the inference.
 def run_inference(image_to_classify, ssd_mobilenet_graph):
 
-    regionpts = numpy.array([[306,164],[352,164],[508,676],[770,676]], numpy.int32)
+    regionpts = numpy.array([[361,195],[414,195],[558,691],[761,685]], numpy.int32)
     # preprocess the image to meet nework expectations
     resized_image = preprocess_image(image_to_classify)
 
@@ -553,7 +638,7 @@ def run_inference(image_to_classify, ssd_mobilenet_graph):
             percentage = int(output[base_index + 2] * 100)
             ground_center = ((x1+x2)*0.5, max(y1, y2))
             dist = cv2.pointPolygonTest(regionpts,ground_center,True)
-            if class_id >= 0 and object_classifications_mask[class_id] != 0 and percentage > min_score_percent and not dist < -50:
+            if class_id >= 0 and object_classifications_mask[class_id] != 0 and percentage > min_score_percent and not dist < -1:
                 found_filtered.append([x1, y1, x2, y2])
                 probs.append(output[base_index + 2])
 
@@ -566,7 +651,7 @@ def run_inference(image_to_classify, ssd_mobilenet_graph):
 
     ratio = 1.0
     if image_to_classify.any() and FinishCalibration:
-        frame = draw(image_to_classify,calib_corners,calib_imgpt)
+        frame = draw_axis_and_ptgrid(image_to_classify,calib_corners,calib_imgpt, ptgrid)
         pick = non_max_suppression(np.array(found_filtered), probs, overlapThresh=0.3)
 
         # draw the final bounding boxes
@@ -616,7 +701,7 @@ def print_usage():
 # This function is called from the entry point to do
 # all the work.
 def main():
-    global resize_output, resize_output_width, resize_output_height, FinishCalibration, pattern_size, pattern_points, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, axis, calib_corners, calib_imgpt
+    global resize_output, resize_output_width, resize_output_height, FinishCalibration, pattern_size, pattern_points, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, axis, calib_corners, calib_imgpt, ptgrid
     if (not handle_args()):
         print_usage()
         return 1
@@ -742,7 +827,9 @@ def main():
                             imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                             calib_corners = corners
                             calib_imgpt = imgpts2
-                            frame = draw(frame,calib_corners,calib_imgpt)
+                            imgpts3, jac3 = cv.projectPoints(grid, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                            ptgrid = imgpts3
+                            #frame = draw(frame,calib_corners,calib_imgpt)
 
                             imgpts, jac = cv.projectPoints(np.array(obj_points), rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                             #print(imgpts[0][0])
