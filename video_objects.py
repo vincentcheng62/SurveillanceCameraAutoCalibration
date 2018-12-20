@@ -30,6 +30,7 @@ import argparse
 from imutils.object_detection import non_max_suppression
 from numpy.linalg import inv
 from math import log10, floor
+import pyproj
 
 camera_matrix_manual = np.zeros((3, 3), np.float32)
 camera_matrix_manual[0, 0] = 1009.60665
@@ -96,6 +97,8 @@ grid = np.float32([[0.5,-0.5,0], [0.5,0,0], [0.5,0.5,0],
                    [-13.5,-0.5,0], [-13.5,0,0], [-13.5,0.5,0],
                    [-14,-0.5,0], [-14,0,0], [-14,0.5,0],
                    [-14.5,-0.5,0], [-14.5,0,0], [-14.5,0.5,0]] ).reshape(-1,3)
+
+cb_to_ecef_transform = None
 
 # name of the opencv window
 cv_window_name = "SSD Mobilenet" 
@@ -175,6 +178,7 @@ def GetWindowWithAxis(Size_of_w, physical_size):
     return img
 
 def GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, method=0):
+    s1=1
     s2=1
     r13=rot[0][2]
     r23=rot[1][2]
@@ -193,7 +197,7 @@ def GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, method=0):
         Tz = r13*t1+r23*t2+r33*t3
         dz = r13*u2+r23*v2+r33*1.0
         s2 = Tz/dz
-        print("s2: ", s2)
+        print("s2g: ", s2)
 
     else:
         # Use head-pt and bottom-pt to approximate the (X, Y, Z) of the bottom pt in which Z != 0
@@ -209,20 +213,44 @@ def GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, method=0):
         Df[0, 1] = -2*(u1*u1+v1*v2+1)
         Df[1, 0] = -2*(u1*u1+v1*v2+1)
         Df[1, 1] = 2*(u1*u1+v2*v2+1)
-        print("Df: ", Df)
+        #print("Df: ", Df)
 
         Zero = np.zeros((2, 1), np.float32)
         Zero[0, 0] = 2*h*(u1*r13+v1*r23+r33)
         Zero[1, 0] = -2*h*(u1*r13+v2*r23+r33)
-        print("Zero: ", Zero)
+        #print("Zero: ", Zero)
 
-        Answer = inv(Df)*Zero
-        print("Answer: ", Answer)
+        Answer = np.matmul(inv(Df), Zero)
+        #print("Answer: ", Answer)
         s1=Answer[0][0]
         s2=Answer[1][0]
+
+        #Calculate the loss vector
+        rhs = np.zeros((3, 1), np.float32)
+        rhs[0, 0] = h*r13
+        rhs[1, 0] = h*r23
+        rhs[2, 0] = h*r33
+
+        lhs = np.zeros((3, 1), np.float32)
+        lhs[0, 0] = s1*u1-s2*u2
+        lhs[1, 0] = s1*v1-s2*v2
+        lhs[2, 0] = s1-s2
+
+        #print("loss vector: ", lhs-rhs)    
+        diff = np.matmul(inv(rot), lhs)
+        print("diff vector: ", cv.transpose(diff))    
         print("s1: ", s1, ", s2: ", s2)
 
-    return s2
+    return s1, s2
+
+def RecoverGPSCoord(cb_coord):
+    ecef_coord = np.matmul(cb_to_ecef_transform[:,0:3], cb_coord) + cv.transpose(np.array([cb_to_ecef_transform[:, 3]]))
+    print("ecef_coord: ", cv.transpose(ecef_coord))
+
+    ecef = pyproj.Proj(proj='geocent', ellps='WGS84', datum='WGS84')
+    lla = pyproj.Proj(proj='latlong', ellps='WGS84', datum='WGS84')
+    lon, lat, alt = pyproj.transform(ecef, lla, ecef_coord[0][0], ecef_coord[1][0], ecef_coord[2][0], radians=False)
+    return (lat, lon, alt)
 
 def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners):
     Lmap_localized = Lmap.copy()
@@ -240,35 +268,49 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
         bigger_frame_reproject = cv.circle(bigger_frame_reproject, (int(bottom_pt[0]), int(bottom_pt[1])), 5, (0,255,0), thickness=3, lineType=8, shift=0) 
         bigger_frame_reproject = cv.circle(bigger_frame_reproject, (int(head_pt[0]), int(head_pt[1])), 5, (0,255,0), thickness=3, lineType=8, shift=0) 
 
+        print("head_pt: ", head_pt)
         print("bottom_pt: ", bottom_pt)
         bp = np.zeros((1, 2), np.float32)
         bp[0][0] = bottom_pt[0]
         bp[0][1] = bottom_pt[1]
+        hp = np.zeros((1, 2), np.float32)
+        hp[0][0] = head_pt[0]
+        hp[0][1] = head_pt[1]        
         #print("calib_corners: ", calib_corners[0])
         dst = cv.undistortPoints(bp.reshape(-1,1,2).astype(np.float32), camera_matrix_manual, dist_coefs_manual)
         bottom_pt = dst[0][0]
+        dst2 = cv.undistortPoints(hp.reshape(-1,1,2).astype(np.float32), camera_matrix_manual, dist_coefs_manual)        
+        head_pt = dst2[0][0]
         # according to the formula: s1=1.7*r33+s2, s2=1.7*(r23-v1*r33)/(v1-v2)
         #s2 = 1.7*(rot[1][2]-head_pt[1]*rot[2][2])/(head_pt[1]-bottom_pt[1])
+        print("head_pt after undistort: ", head_pt)
         print("bottom_pt after undistort: ", bottom_pt)
         #bottom_pt_center_normalized = (bottom_pt[0]-camera_matrix_manual[0][2], bottom_pt[1]-camera_matrix_manual[1][2])
         #print("bottom_pt_center_normalized: ", bottom_pt_center_normalized)        
         #s1 = 1.7*rot[2][2]+s2
 
         #print("ref_tvec: ", ref_tvec[0][0], ref_tvec[1][0], ref_tvec[2][0])
-        AlgMethod=1  # 0 : assume z=0, 1: assume height=1.7
-        s2 = GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, AlgMethod)
+        #AlgMethod=1  # 0 : assume z=0, 1: assume height=1.7
+        s1g, s2g = GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, 0)
+        s1, s2 = GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, 1)
 
-        img_pt = np.array([[bottom_pt[0]], [bottom_pt[1]], [1]])
+        img_pt_h = np.array([[head_pt[0]], [head_pt[1]], [1]])
+        img_pt_b = np.array([[bottom_pt[0]], [bottom_pt[1]], [1]])
         #print("zz: ", s2*img_pt-ref_tvec)
         #print("tra: ", cv.transpose(rot))
-        result2 = np.matmul(cv.transpose(rot), s2*img_pt-ref_tvec)
-        print("result: ",cv.transpose(result2))
+        result1 = np.matmul(cv.transpose(rot), s1*img_pt_h-ref_tvec)
+        result2 = np.matmul(cv.transpose(rot), s2*img_pt_b-ref_tvec)
+        resultg = np.matmul(cv.transpose(rot), s2g*img_pt_b-ref_tvec)
+        print("result1: ",cv.transpose(result1))
+        print("result2: ",cv.transpose(result2))
+        print("resultg: ",cv.transpose(resultg))
+        print("resultg-result2: ",cv.transpose(resultg-result2))
 
         center = (int(Size_of_w*0.5-result2[1][0]*px_of_meter), int(result2[0][0]*px_of_meter+Size_of_w*0.5))     
-        print("world XY: ", result2[0][0], result2[1][0])    
-        print("window XY: ", center[0], center[1])
+        #print("world XYZ: ", result2[0][0], result2[1][0], result2[2][0])    
+        print("window XY of bottom pt: ", center[0], center[1])
         #print("result: ", result)
-        pchar = "[" + str(round_to_1(result2[0][0])) + ", " + str(round_to_1(result2[1][0])) + "]"
+        pchar = "[" + str(round_to_1(result2[0][0])) + ", " + str(round_to_1(result2[1][0])) + ", " + str(round_to_1(result2[2][0])) + "]"
 
         Lmap_localized = cv.circle(Lmap_localized, center, 5, (255,0,0), thickness=3, lineType=8, shift=0) 
         cv.putText(Lmap_localized, pchar, center, cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1) 
@@ -276,11 +318,18 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
         #Project the resulting 3d point onto 2d image again for comfirmation.
         imgpts, jac = cv.projectPoints(np.array([[result2[0][0], result2[1][0], result2[2][0]], [0.0, 0.0, 0.0]]), ref_rvec, ref_tvec, camera_matrix_manual, dist_coefs_manual)
         intpt =  (int(imgpts[0][0][0]), int(imgpts[0][0][1]))
-        print("intpt: ", intpt)
+        print("reproject result2 to 2d plane: ", intpt)
 
         if intpt[0]>0 and intpt[0]<bigger_frame_reproject.shape[1] and intpt[1]>0 and intpt[1]<bigger_frame_reproject.shape[0]:
             bigger_frame_reproject = cv.circle(bigger_frame_reproject, intpt, 5, (255,0,0), thickness=3, lineType=8, shift=0) 
-            cv.putText(bigger_frame_reproject, pchar, (intpt[0], intpt[1]+30), cv.FONT_HERSHEY_COMPLEX, 0.8, (255,0,0), 2)         
+            cv.putText(bigger_frame_reproject, pchar, (intpt[0], intpt[1]+30), cv.FONT_HERSHEY_COMPLEX, 0.8, (255,0,0), 2)  
+        
+
+        # Recover the gps coordinate
+        gps_coord = RecoverGPSCoord(resultg)
+        print("gps_coord: ", gps_coord)
+
+        print("==============================================================================================")       
 
     return Lmap_localized, bigger_frame_reproject
 
@@ -513,6 +562,8 @@ def overlay_on_image(display_image, object_info):
     cv2.putText(display_image, label_text, (label_left, label_bottom), cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_text_color, 1)
 
 def draw_axis_and_ptgrid(img, corners, imgpts, ptgrid):
+
+    cv.drawChessboardCorners(img, pattern_size, corners, True)
     corner = tuple(corners[0].ravel())
     img = cv.line(img, corner, tuple(imgpts[0].ravel()), (0,0,255), 3)
     img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0,255,0), 3)
@@ -582,6 +633,43 @@ def handle_args():
     return True
 
 
+kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
+kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(7,7))
+#fgbg = cv.bgsegm.createBackgroundSubtractorGMG()
+#Threshold on the squared Mahalanobis distance between the pixel and the model to decide whether a pixel is well described by
+#the background model. This parameter does not affect the background update.
+fgbg = cv.createBackgroundSubtractorMOG2(history=500, varThreshold=8, detectShadows=True)
+#fgbg = cv.bgsegm.createBackgroundSubtractorGMG()t
+detector = cv.SimpleBlobDetector_create()
+connectivity = 8
+min_thresh=1500
+max_thresh=10000
+
+def AreaOfRect(rect):
+    return (rect[2]-rect[0])*(rect[3]-rect[1])
+
+max_ratio_thd = 1.3
+def FindRefineBox(ssd_bb, fg_bbs):
+    least_area_ratio = 9999
+    best_bb = ssd_bb
+    ret = False
+    area_ssd = AreaOfRect(ssd_bb)
+
+    for bb in fg_bbs:
+        # if the fg_bb completely surround ssd_bb
+        if bb[0]<= ssd_bb[0] and bb[1] <= ssd_bb[1] and bb[2] >= ssd_bb[2] and bb[3] >= ssd_bb[3]:
+            area_fg = AreaOfRect(bb)
+            area_ratio = area_fg*1.0/area_ssd
+            if area_ratio>=1.0 and area_ratio < least_area_ratio and area_ratio<max_ratio_thd:
+
+                least_area_ratio = area_ratio
+                best_bb = bb
+                ret = True
+
+    return ret, best_bb
+
+
+
 # Run an inference on the passed image
 # image_to_classify is the image on which an inference will be performed
 #    upon successful return this image will be overlayed with boxes
@@ -649,11 +737,35 @@ def run_inference(image_to_classify, ssd_mobilenet_graph):
     cv2.rectangle(image_to_classify,(0, 0),(100, 15), (128, 128, 128), -1)
     cv2.putText(image_to_classify, "Q to Quit", (10, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
 
+    fg_bbs=[]
+    new_pick=[]
     ratio = 1.0
     if image_to_classify.any() and FinishCalibration:
+        raw_frame = image_to_classify.copy()
         frame = draw_axis_and_ptgrid(image_to_classify,calib_corners,calib_imgpt, ptgrid)
         pick = non_max_suppression(np.array(found_filtered), probs, overlapThresh=0.3)
 
+        # involve background subtraction to get a better boundingbox
+        fgmask = fgbg.apply(raw_frame)
+
+        # erosion followed by dilation. 
+        fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, kernel)
+        #fgmask = cv.dilate(fgmask,kernel2,iterations = 1)
+        thrhd_value = 128
+        ret,fg_no_shadow = cv.threshold(fgmask,thrhd_value,255,cv.THRESH_BINARY)
+
+        fgmask_display = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
+
+        output = cv.connectedComponentsWithStats(fg_no_shadow, connectivity, cv.CV_32S)
+        for i in range(output[0]):
+            ground_center = (output[2][i][0]+(output[2][i][2])*0.5, output[2][i][1] + output[2][i][3])
+            dist = cv2.pointPolygonTest(regionpts,ground_center,True)
+            if output[2][i][4] >= min_thresh and not dist < -1 :
+                cv.rectangle(fgmask_display, (output[2][i][0], output[2][i][1]), (
+                    output[2][i][0] + output[2][i][2], output[2][i][1] + output[2][i][3]), (0, 0, 255), 2)
+                cv.rectangle(image_to_classify, (output[2][i][0], output[2][i][1]), (
+                    output[2][i][0] + output[2][i][2], output[2][i][1] + output[2][i][3]), (0, 0, 255), 2)    
+                fg_bbs.append((output[2][i][0], output[2][i][1], output[2][i][0] + output[2][i][2], output[2][i][1] + output[2][i][3]))    
         # draw the final bounding boxes
         #pick_masked=[]
         #regionpts = numpy.array([[306,164],[352,164],[508,676],[770,676]], numpy.int32)
@@ -661,13 +773,19 @@ def run_inference(image_to_classify, ssd_mobilenet_graph):
             # ground_center = ((xA+xB)*0.5, max(yA, yB))
             # dist = cv2.pointPolygonTest(regionpts,ground_center,True)
             # if dist>0:
-            cv.rectangle(image_to_classify, (xA, yA), (xB, yB), (0, 255, 0), 2)     
-                #pick_masked.append((xA, yA, xB, yB))   
+            ret, best_bb = FindRefineBox((xA, yA, xB, yB), fg_bbs)
+            cv.rectangle(image_to_classify, (best_bb[0], best_bb[1]), (best_bb[2], best_bb[3]), (255 if ret else 0, 0 if ret else 255, 0), 2)    
+            new_pick.append(best_bb)
+            
+            #cv.rectangle(fgmask_display, (xA, yA), (xB, yB), (0, 255, 0), 2)     
+            #pick_masked.append((xA, yA, xB, yB))   
 
         Size_of_w=600
         physical_size=30
         Lmap = GetWindowWithAxis(Size_of_w, physical_size)
-        Lmap_localized, bigger_frame_reproject = PrintLocalization(Lmap, image_to_classify, pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners)
+        Lmap_localized, bigger_frame_reproject = PrintLocalization(Lmap, image_to_classify, new_pick, ratio, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners)
+        
+        cv.imshow('bg subtraction and connected component detection', fgmask_display)                
         cv.imshow('pedestrian detection', bigger_frame_reproject)        
         cv.imshow('localization', Lmap_localized)     
 
@@ -701,7 +819,7 @@ def print_usage():
 # This function is called from the entry point to do
 # all the work.
 def main():
-    global resize_output, resize_output_width, resize_output_height, FinishCalibration, pattern_size, pattern_points, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, axis, calib_corners, calib_imgpt, ptgrid
+    global resize_output, resize_output_width, resize_output_height, FinishCalibration, pattern_size, pattern_points, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, axis, calib_corners, calib_imgpt, ptgrid, cb_to_ecef_transform
     if (not handle_args()):
         print_usage()
         return 1
@@ -746,6 +864,12 @@ def main():
 
     cv2.namedWindow(cv_window_name)
     cv2.moveWindow(cv_window_name, 10,  10)
+
+
+    fs_read = cv2.FileStorage("cb_to_ecef.yml", cv2.FILE_STORAGE_READ)
+    cb_to_ecef_transform = fs_read.getNode("transform").mat()
+    print("cb_to_ecef_transform: ", cb_to_ecef_transform)
+    fs_read.release()    
 
     exit_app = False
     while (True):
@@ -872,6 +996,7 @@ def main():
                         else:
                             print("Cannot find any chessboard! break!")
                             CanStillFound = False
+                            #cv.imshow("failure", frame_gray)
                             break
 
 
