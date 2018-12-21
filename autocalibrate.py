@@ -756,11 +756,16 @@ while(cap.isOpened()):
     ratio = 2.0
     ratioint = int(ratio)
     pick_inregion=[]
+    margin=15
     if frame.any() and FinishCalibration:
+        starts = time.time()
         frame_display = frame.copy()
         frame_display = draw_axis_and_ptgrid(frame_display,calib_corners,calib_imgpt, ptgrid)
         resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 
+
+        start = time.time()
         rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(32,32), scale=1.05)
+        print("hog.detectMultiScale took {} seconds.".format(time.time() - start))
         
         found_filtered = []
         # kill bb that has low weight
@@ -784,8 +789,9 @@ while(cap.isOpened()):
             ground_center = ((xA+xB)*0.5*ratio, max(yA, yB)*ratio)
             dist = cv2.pointPolygonTest(regionpts,ground_center,True)
             if not dist < -1 :
-                pick_inregion.append((xA*ratioint, yA*ratioint, xB*ratioint, yB*ratioint))
-                cv.rectangle(frame_display, (xA*ratioint, yA*ratioint), (xB*ratioint, yB*ratioint), (0, 255, 0), 2)        
+                marginpt = ((xA +margin)*ratioint, (yA+margin)*ratioint, (xB-margin)*ratioint, (yB-margin)*ratioint)
+                pick_inregion.append(marginpt)
+                cv.rectangle(frame_display, (marginpt[0], marginpt[1]), (marginpt[2], marginpt[3]), (0, 255, 0), 2)        
 
         #bigger_frame = cv.resize(resized_frame, (0,0), fx=ratio, fy=ratio) 
         #cv.imshow('pedestrian detection', bigger_frame)        
@@ -794,6 +800,8 @@ while(cap.isOpened()):
         physical_size=30
         Lmap = GetWindowWithAxis(Size_of_w, physical_size)
         Lmap_localized, bigger_frame_reproject = PrintLocalization(Lmap, frame_display, pick_inregion, 1.0, Size_of_w, physical_size, camera_matrix_manual, dist_coefs_manual, ref_rvec, ref_tvec, calib_corners)
+
+        #print("whole loop took {} seconds.".format(time.time() - starts))
 
         cv.imshow('pedestrian detection', bigger_frame_reproject)        
         cv.imshow('localization', Lmap_localized)      
