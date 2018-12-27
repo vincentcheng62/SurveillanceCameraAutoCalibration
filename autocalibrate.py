@@ -147,6 +147,23 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
         print("gps_coord: ", gps_coord)
 
         print("==============================================================================================")       
+    
+
+    #Calculate gps coord of all the other chessboard origin for debug
+    for org in OtherCBOrigin2D:
+        bigger_frame_reproject = cv.circle(bigger_frame_reproject, (org[0], org[1]), 5, (0,0,255), thickness=3, lineType=8, shift=0) 
+        porgchar = "[" + str(org[0]) + ", " + str(org[1]) + "]"
+        cv.putText(bigger_frame_reproject, porgchar, (int(org[0]+30), int(org[1])+40), cv.FONT_HERSHEY_COMPLEX, 0.6, (0,0,255), 2)  
+        orgp = np.zeros((1, 2), np.float32)
+        orgp[0][0] = org[0]
+        orgp[0][1] = org[1]        
+        dst = cv.undistortPoints(orgp.reshape(-1,1,2).astype(np.float32), camera_matrix_manual, dist_coefs_manual)
+        orgp = dst[0][0]
+        s1g, s2g = GetBottomPtScale([0, 0], orgp, rot, ref_tvec, 0)
+        img_pt_org = np.array([[orgp[0]], [orgp[1]], [1]])
+        resultorgg = np.matmul(cv.transpose(rot), s2g*img_pt_org-ref_tvec)
+        org_gps_coord = RecoverGPSCoord(resultorgg)
+        print("CB origin: ", org, ", gps coord: ", org_gps_coord)
 
     return Lmap_localized, bigger_frame_reproject
 
@@ -401,6 +418,7 @@ grid = np.float32([[0.5,-0.5,0], [0.5,0,0], [0.5,0.5,0],
                    [-14.5,-0.5,0], [-14.5,0,0], [-14.5,0.5,0]] ).reshape(-1,3)
 
 cb_to_ecef_transform = None
+OtherCBOrigin2D=[]
 
 # def draw(img, corners, imgpts):
 #     corner = tuple(corners[0].ravel())
@@ -461,7 +479,7 @@ def GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, method=0):
         Tz = r13*t1+r23*t2+r33*t3
         dz = r13*u2+r23*v2+r33*1.0
         s2 = Tz/dz
-        print("s2g: ", s2)
+        #print("s2g: ", s2)
 
     else:
         # Use head-pt and bottom-pt to approximate the (X, Y, Z) of the bottom pt in which Z != 0
@@ -502,14 +520,14 @@ def GetBottomPtScale(head_pt, bottom_pt, rot, ref_tvec, method=0):
 
         #print("loss vector: ", lhs-rhs)    
         diff = np.matmul(inv(rot), lhs)
-        print("diff vector: ", cv.transpose(diff))    
-        print("s1: ", s1, ", s2: ", s2)
+        #print("diff vector: ", cv.transpose(diff))    
+        #print("s1: ", s1, ", s2: ", s2)
 
     return s1, s2
 
 def RecoverGPSCoord(cb_coord):
     ecef_coord = np.matmul(cb_to_ecef_transform[:,0:3], cb_coord) + cv.transpose(np.array([cb_to_ecef_transform[:, 3]]))
-    print("ecef_coord: ", cv.transpose(ecef_coord))
+    #print("ecef_coord: ", cv.transpose(ecef_coord))
 
     ecef = pyproj.Proj(proj='geocent', ellps='WGS84', datum='WGS84')
     lla = pyproj.Proj(proj='latlong', ellps='WGS84', datum='WGS84')
@@ -621,7 +639,7 @@ while(cap.isOpened()):
         # plt.imshow(resized_fgmask)
         # plt.show(block=True)
 
-
+    largest_cb_square_dist=0
     if frame.any() and not FinishCalibration:
         fitting_error=[]
         frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
@@ -638,7 +656,9 @@ while(cap.isOpened()):
                 #print("corners:", corners)
                 
                 cv.cornerSubPix(frame_gray, corners, (5, 5), (-1, -1), term)
-                #print("corners:", corners)
+                #print("corners:", corners)                
+                cb_square_dist = (corners[0][0][0]-corners[1][0][0])*(corners[0][0][0]-corners[1][0][0])+(corners[0][0][1]-corners[1][0][1])*(corners[0][0][1]-corners[1][0][1])
+                print("cb_square_dist:", cb_square_dist)
                 chessboards = [(corners.reshape(-1, 2), pattern_points)]
 
                 chessboards = [x for x in chessboards if x is not None]
@@ -652,17 +672,19 @@ while(cap.isOpened()):
                 #print(img_points[0][0])
                 returnval, rvecs, tvecs = cv.solvePnP(np.array(obj_points), np.array(img_points),camera_matrix_manual, dist_coefs_manual )
 
-                #if img_points[0][0][0] > 640:
-                ref_rvec = rvecs
-                ref_tvec = tvecs
-                print("Calibration result is: ", ref_rvec, ref_tvec)
-                print(axis)
-                imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
-                calib_corners = corners
-                calib_imgpt = imgpts2
-                imgpts3, jac3 = cv.projectPoints(grid, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
-                ptgrid = imgpts3
-                #frame = draw(frame,calib_corners,calib_imgpt)
+                if cb_square_dist > largest_cb_square_dist:
+                    largest_cb_square_dist = cb_square_dist
+                    ref_rvec = rvecs
+                    ref_tvec = tvecs
+                    #print(axis)
+                    imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                    calib_corners = corners
+                    calib_imgpt = imgpts2
+                    imgpts3, jac3 = cv.projectPoints(grid, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                    ptgrid = imgpts3
+                    #frame = draw(frame,calib_corners,calib_imgpt)
+
+                OtherCBOrigin2D.append(corners[0])
 
                 imgpts, jac = cv.projectPoints(np.array(obj_points), rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                 #print(imgpts[0][0])
@@ -710,6 +732,7 @@ while(cap.isOpened()):
 
 
         if DetectedChessBoardnum > 0:
+            print("Calibration result is: ", ref_rvec, ref_tvec)
             board_width = 5
             board_height = 4
             square_size = 0.064
@@ -765,7 +788,7 @@ while(cap.isOpened()):
 
         start = time.time()
         rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(32,32), scale=1.05)
-        print("hog.detectMultiScale took {} seconds.".format(time.time() - start))
+        #print("hog.detectMultiScale took {} seconds.".format(time.time() - start))
         
         found_filtered = []
         # kill bb that has low weight
