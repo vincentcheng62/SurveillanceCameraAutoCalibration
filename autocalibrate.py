@@ -5,7 +5,6 @@ import time, datetime
 from matplotlib import pyplot as plt
 import operator
 import math
-
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 from numpy import linspace
@@ -13,12 +12,19 @@ import argparse
 from imutils.object_detection import non_max_suppression
 from numpy.linalg import inv
 from math import log10, floor
-
 import pyproj
 
+#cap = cv.VideoCapture('rtsp://admin:h0940232@172.18.9.100/Streaming/Channels/1')
+cap = cv.VideoCapture('rtsp://admin:h0940232@192.168.0.100/Streaming/Channels/1')
+#cap = cv.VideoCapture('output2018-12-28-11-50-17.avi')
+square_size = 0.375
+IsDetectPeople = False
+IsSaveToVideo = True
 IsEachFrameDebug = False
+IsPlottingPtGrid = True
 hog_threshold = 0.9
 regionpts = np.array([[361,195],[414,195],[558,691],[761,685]], np.int32)
+
 
 def inside(r, q):
     rx, ry, rw, rh = r
@@ -176,8 +182,9 @@ def draw_axis_and_ptgrid(img, corners, imgpts, ptgrid):
     img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255,0,0), 3)
 
     # Also draw a point grid in the z-plane for debug purpose
-    for pt in ptgrid:
-        img = cv.circle(img, tuple(pt.ravel()), 4, (0,255,0), thickness=2, lineType=8, shift=0) 
+    if IsPlottingPtGrid:
+        for pt in ptgrid:
+            img = cv.circle(img, tuple(pt.ravel()), 4, (0,255,0), thickness=2, lineType=8, shift=0) 
 
     return img
 
@@ -321,7 +328,7 @@ def draw_camera_boards(ax, camera_matrix, cam_width, cam_height, scale_focal,
 
     return min_values, max_values
 
-cap = cv.VideoCapture('rtsp://admin:h0940232@172.18.9.100/Streaming/Channels/1')
+
 #cap = cv.VideoCapture('sample.MOV')
 #cap = cv2.VideoCapture('rtsp://172.18.9.99/axis-media/media.amp')
 #time.sleep(5)
@@ -329,6 +336,7 @@ cap = cv.VideoCapture('rtsp://admin:h0940232@172.18.9.100/Streaming/Channels/1')
 
 kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
 kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(7,7))
+kernel3 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(30,30))
 #fgbg = cv.bgsegm.createBackgroundSubtractorGMG()
 #Threshold on the squared Mahalanobis distance between the pixel and the model to decide whether a pixel is well described by
 #the background model. This parameter does not affect the background update.
@@ -376,7 +384,10 @@ dist_coefs_manual[0, 6] = 7.55768940
 dist_coefs_manual[0, 7] = 1.36953813  
 
 pattern_size = (4, 3)
-square_size = 0.06395
+#square_size = 0.06395
+
+
+
 pattern_points = np.zeros((np.prod(pattern_size), 3), np.float32)
 pattern_points[:, :2] = np.indices(pattern_size).T.reshape(-1, 2)
 pattern_points *= square_size
@@ -546,12 +557,23 @@ cb_to_ecef_transform = fs_read.getNode("transform").mat()
 print("cb_to_ecef_transform: ", cb_to_ecef_transform)
 fs_read.release()   
 
+video_writer=None
+now = datetime.datetime.now()
+name = "output" + str(now.strftime("%Y-%m-%d-%H-%M-%S")) + ".avi"
+if IsSaveToVideo:
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    video_writer = cv2.VideoWriter(name, fourcc, 8, (1280, 720))
+    print("Saving the frames to video output -> ", name)
+
 while(cap.isOpened()):
     frame_num = frame_num+1
     start = time.time()
     ret, frame = cap.read()
     if ret == False:
         break
+    elif IsSaveToVideo:
+        video_writer.write(frame)
+
     #print("cap.read() took {} seconds.".format(time.time() - start))
     start = time.time()
     #cv2.putText(frame, str(datetime.datetime.now()), (210, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 0, 0), 2, 2)
@@ -643,12 +665,21 @@ while(cap.isOpened()):
     if frame.any() and not FinishCalibration:
         fitting_error=[]
         frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+        #frame_gray[frame_bw==0]=0
         extrinsics = None
         CanStillFound = True
         DetectedChessBoardnum=0
         while CanStillFound:
-            #cv.imwrite("zzzz.png", frame_gray)
-            found, corners = cv.findChessboardCorners(frame_gray, pattern_size,  flags=cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_NORMALIZE_IMAGE + cv.CALIB_CB_FAST_CHECK)
+            thrhd_value = 240
+            bw_ret,frame_bw = cv.threshold(frame_gray,thrhd_value,255,cv.THRESH_BINARY)
+            #frame_multi=np.zeros((720,1280),dtype="uint8")
+            frame_bw = cv.morphologyEx(frame_bw, cv.MORPH_OPEN, kernel)
+            frame_bw = cv.dilate(frame_bw,kernel3,iterations = 1)
+            frame_multi = cv2.bitwise_and(frame_gray, frame_gray, mask=frame_bw)            
+            cv.imwrite("zzzz_frame_gray.png", frame_gray)
+            cv.imwrite("zzzz_frame_multi.png", frame_multi)
+            cv.imwrite("zzzz_frame_bw.png", frame_bw)
+            found, corners = cv.findChessboardCorners(frame_multi, pattern_size,  flags=cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_NORMALIZE_IMAGE + cv.CALIB_CB_FAST_CHECK)
             if found:
                 DetectedChessBoardnum = DetectedChessBoardnum + 1
                 obj_points = []
@@ -719,7 +750,8 @@ while(cap.isOpened()):
 
                 #mask out the current chessboard
                 x,y,w,h = cv.boundingRect(corners)
-                cv.rectangle(frame_gray,(x-10,y-10),(x+w+10,y+h+10),255,-1)
+                margin=30
+                cv.rectangle(frame_gray,(x-margin,y-margin),(x+w+margin,y+h+margin),255,-1)
                 cv.putText(frame, str(DetectedChessBoardnum), (x, y), cv.FONT_HERSHEY_COMPLEX, 2, (0,255,0), 5) 
                 # cv.imshow('masked chessboard', frame_gray)
                 # cv.waitKey(0)                
@@ -784,37 +816,39 @@ while(cap.isOpened()):
         starts = time.time()
         frame_display = frame.copy()
         frame_display = draw_axis_and_ptgrid(frame_display,calib_corners,calib_imgpt, ptgrid)
-        resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 
 
-        start = time.time()
-        rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(32,32), scale=1.05)
-        #print("hog.detectMultiScale took {} seconds.".format(time.time() - start))
-        
-        found_filtered = []
-        # kill bb that has low weight
-        for qz in range(len(rects)):
-            if weight[qz][0] > hog_threshold:
-                found_filtered.append(rects[qz])
+        if IsDetectPeople:
+            resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 
 
-        # found_filtered = []
-        # for ri, r in enumerate(rect):
-        #     for qi, q in enumerate(rect):
-        #         if ri != qi and inside(r, q):
-        #             break
-        #     else:
-        #         found_filtered.append(r)
-        # draw_detections(resized_frame, found_filtered, 3)
-        found_filtered = np.array([[x, y, x + w, y + h] for (x, y, w, h) in found_filtered])
-        pick = non_max_suppression(found_filtered, probs=None, overlapThresh=0.3)
+            start = time.time()
+            rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(32,32), scale=1.05)
+            #print("hog.detectMultiScale took {} seconds.".format(time.time() - start))
+            
+            found_filtered = []
+            # kill bb that has low weight
+            for qz in range(len(rects)):
+                if weight[qz][0] > hog_threshold:
+                    found_filtered.append(rects[qz])
 
-        # draw the final bounding boxes
-        for (xA, yA, xB, yB) in pick:
-            ground_center = ((xA+xB)*0.5*ratio, max(yA, yB)*ratio)
-            dist = cv2.pointPolygonTest(regionpts,ground_center,True)
-            if not dist < -1 :
-                marginpt = ((xA +margin)*ratioint, (yA+margin)*ratioint, (xB-margin)*ratioint, (yB-margin)*ratioint)
-                pick_inregion.append(marginpt)
-                cv.rectangle(frame_display, (marginpt[0], marginpt[1]), (marginpt[2], marginpt[3]), (0, 255, 0), 2)        
+            # found_filtered = []
+            # for ri, r in enumerate(rect):
+            #     for qi, q in enumerate(rect):
+            #         if ri != qi and inside(r, q):
+            #             break
+            #     else:
+            #         found_filtered.append(r)
+            # draw_detections(resized_frame, found_filtered, 3)
+            found_filtered = np.array([[x, y, x + w, y + h] for (x, y, w, h) in found_filtered])
+            pick = non_max_suppression(found_filtered, probs=None, overlapThresh=0.3)
+
+            # draw the final bounding boxes
+            for (xA, yA, xB, yB) in pick:
+                ground_center = ((xA+xB)*0.5*ratio, max(yA, yB)*ratio)
+                dist = cv2.pointPolygonTest(regionpts,ground_center,True)
+                if not dist < -1 :
+                    marginpt = ((xA +margin)*ratioint, (yA+margin)*ratioint, (xB-margin)*ratioint, (yB-margin)*ratioint)
+                    pick_inregion.append(marginpt)
+                    cv.rectangle(frame_display, (marginpt[0], marginpt[1]), (marginpt[2], marginpt[3]), (0, 255, 0), 2)        
 
         #bigger_frame = cv.resize(resized_frame, (0,0), fx=ratio, fy=ratio) 
         #cv.imshow('pedestrian detection', bigger_frame)        
@@ -839,6 +873,8 @@ while(cap.isOpened()):
         break
 
 cap.release()
+if IsSaveToVideo:
+    video_writer.release()
 cv.destroyAllWindows()
 
 # print("Collected over {} major axis of pedestrian blob, start calculation...".format(line_db_need_to_collect))
