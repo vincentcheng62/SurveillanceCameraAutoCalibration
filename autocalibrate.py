@@ -15,15 +15,28 @@ from math import log10, floor
 import pyproj
 
 #cap = cv.VideoCapture('rtsp://admin:h0940232@172.18.9.100/Streaming/Channels/1')
-cap = cv.VideoCapture('rtsp://admin:h0940232@192.168.0.100/Streaming/Channels/1')
+#cap = cv.VideoCapture('rtsp://admin:h0940232@192.168.0.100/Streaming/Channels/1')
+cap = cv.VideoCapture('golden_egg2.avi')
+#cap = cv.VideoCapture('office.avi')
 #cap = cv.VideoCapture('output2018-12-28-11-50-17.avi')
 square_size = 0.375
 IsDetectPeople = False
-IsSaveToVideo = True
+IsSaveToVideo = False
 IsEachFrameDebug = False
-IsPlottingPtGrid = True
-hog_threshold = 0.9
+IsPlottingPtGrid = False
+IsCheckInsidePolygon = False
+IsDebugCBCanFound = True
+hog_threshold = 0.1 #0.9
+SupposeCBNumber=2
 regionpts = np.array([[361,195],[414,195],[558,691],[761,685]], np.int32)
+kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
+kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(7,7))
+kernel3 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(60,60))   
+
+def degreesToRadians(degrees):
+  return degrees * math.pi / 180
+
+earthRadiusKm = 6371
 
 
 def inside(r, q):
@@ -158,8 +171,8 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
     #Calculate gps coord of all the other chessboard origin for debug
     for org in OtherCBOrigin2D:
         bigger_frame_reproject = cv.circle(bigger_frame_reproject, (org[0], org[1]), 5, (0,0,255), thickness=3, lineType=8, shift=0) 
-        porgchar = "[" + str(org[0]) + ", " + str(org[1]) + "]"
-        cv.putText(bigger_frame_reproject, porgchar, (int(org[0]+30), int(org[1])+40), cv.FONT_HERSHEY_COMPLEX, 0.6, (0,0,255), 2)  
+        porgchar = "Image[" + str(org[0]) + ", " + str(org[1]) + "]"
+        cv.putText(bigger_frame_reproject, porgchar, (int(org[0]+30), int(org[1])-30), cv.FONT_HERSHEY_COMPLEX, 0.5, (0,0,255), 1)  
         orgp = np.zeros((1, 2), np.float32)
         orgp[0][0] = org[0]
         orgp[0][1] = org[1]        
@@ -168,8 +181,16 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
         s1g, s2g = GetBottomPtScale([0, 0], orgp, rot, ref_tvec, 0)
         img_pt_org = np.array([[orgp[0]], [orgp[1]], [1]])
         resultorgg = np.matmul(cv.transpose(rot), s2g*img_pt_org-ref_tvec)
+        porgchar = "CBC[" + str(resultorgg[0]) + ", " + str(resultorgg[1]) + ", " + str(resultorgg[2]) + "]"
+        cv.putText(bigger_frame_reproject, porgchar, (int(org[0]+30), int(org[1])), cv.FONT_HERSHEY_COMPLEX, 0.5, (0,255,0), 1)          
         org_gps_coord = RecoverGPSCoord(resultorgg)
-        print("CB origin: ", org, ", gps coord: ", org_gps_coord)
+        porgchar = "GPS[" + str(org_gps_coord[0]) + ", " + str(org_gps_coord[1]) + ", " + str(org_gps_coord[2]) + "]"
+        cv.putText(bigger_frame_reproject, porgchar, (int(org[0]+30), int(org[1])+30), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)              
+        print("CB origin: ", org, "CB coord: ", cv.transpose(resultorgg), ", gps coord: ", org_gps_coord)
+
+    
+    test_gps_coord = RecoverGPSCoord(np.array([[0], [-6.045], [0]]))
+    print("test_gps_coord: ", test_gps_coord)
 
     return Lmap_localized, bigger_frame_reproject
 
@@ -334,9 +355,7 @@ def draw_camera_boards(ax, camera_matrix, cam_width, cam_height, scale_focal,
 #time.sleep(5)
 #print(cv2.__version__)
 
-kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(5,5))
-kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(7,7))
-kernel3 = cv.getStructuringElement(cv.MORPH_ELLIPSE,(30,30))
+ 
 #fgbg = cv.bgsegm.createBackgroundSubtractorGMG()
 #Threshold on the squared Mahalanobis distance between the pixel and the model to decide whether a pixel is well described by
 #the background model. This parameter does not affect the background update.
@@ -565,6 +584,8 @@ if IsSaveToVideo:
     video_writer = cv2.VideoWriter(name, fourcc, 8, (1280, 720))
     print("Saving the frames to video output -> ", name)
 
+largest_cb_square_dist=0
+DetectedChessBoardnum=0
 while(cap.isOpened()):
     frame_num = frame_num+1
     start = time.time()
@@ -661,24 +682,30 @@ while(cap.isOpened()):
         # plt.imshow(resized_fgmask)
         # plt.show(block=True)
 
-    largest_cb_square_dist=0
     if frame.any() and not FinishCalibration:
         fitting_error=[]
         frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
         #frame_gray[frame_bw==0]=0
         extrinsics = None
         CanStillFound = True
-        DetectedChessBoardnum=0
+        #print("largest_cb_square_dist: ", largest_cb_square_dist)
+        if largest_cb_square_dist>0.0:
+                x,y,w,h = cv.boundingRect(calib_corners)
+                margin=40
+                cv.rectangle(frame_gray,(x-margin,y-margin),(x+w+margin,y+h+margin),255,-1)
+                #print("yayaya")
+
         while CanStillFound:
-            thrhd_value = 240
+            thrhd_value = 245
             bw_ret,frame_bw = cv.threshold(frame_gray,thrhd_value,255,cv.THRESH_BINARY)
             #frame_multi=np.zeros((720,1280),dtype="uint8")
             frame_bw = cv.morphologyEx(frame_bw, cv.MORPH_OPEN, kernel)
             frame_bw = cv.dilate(frame_bw,kernel3,iterations = 1)
-            frame_multi = cv2.bitwise_and(frame_gray, frame_gray, mask=frame_bw)            
-            cv.imwrite("zzzz_frame_gray.png", frame_gray)
-            cv.imwrite("zzzz_frame_multi.png", frame_multi)
-            cv.imwrite("zzzz_frame_bw.png", frame_bw)
+            frame_multi = cv2.bitwise_and(frame_gray, frame_gray, mask=frame_bw)     
+            if IsDebugCBCanFound:       
+                cv.imwrite("zzzz_frame_gray.png", frame_gray)
+                cv.imwrite("zzzz_frame_multi.png", frame_multi)
+                cv.imwrite("zzzz_frame_bw.png", frame_bw)
             found, corners = cv.findChessboardCorners(frame_multi, pattern_size,  flags=cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_NORMALIZE_IMAGE + cv.CALIB_CB_FAST_CHECK)
             if found:
                 DetectedChessBoardnum = DetectedChessBoardnum + 1
@@ -689,7 +716,7 @@ while(cap.isOpened()):
                 cv.cornerSubPix(frame_gray, corners, (5, 5), (-1, -1), term)
                 #print("corners:", corners)                
                 cb_square_dist = (corners[0][0][0]-corners[1][0][0])*(corners[0][0][0]-corners[1][0][0])+(corners[0][0][1]-corners[1][0][1])*(corners[0][0][1]-corners[1][0][1])
-                print("cb_square_dist:", cb_square_dist)
+                print("cb_square_dist:", math.sqrt(cb_square_dist), "px")
                 chessboards = [(corners.reshape(-1, 2), pattern_points)]
 
                 chessboards = [x for x in chessboards if x is not None]
@@ -704,6 +731,7 @@ while(cap.isOpened()):
                 returnval, rvecs, tvecs = cv.solvePnP(np.array(obj_points), np.array(img_points),camera_matrix_manual, dist_coefs_manual )
 
                 if cb_square_dist > largest_cb_square_dist:
+                    print("This chessboard is larger, use it as calibration chessboard!")
                     largest_cb_square_dist = cb_square_dist
                     ref_rvec = rvecs
                     ref_tvec = tvecs
@@ -724,7 +752,7 @@ while(cap.isOpened()):
                 for zz in range(len(imgpts)):
                     totalfittingerror = totalfittingerror + math.sqrt(math.pow(imgpts[zz][0][0]-img_points[0][zz][0], 2)+math.pow(imgpts[zz][0][1]-img_points[0][zz][1], 2))
                 fitting_error.append(totalfittingerror)
-                #print("totalfittingerror: ", totalfittingerror)
+                print("fittingerror: ", totalfittingerror)
 
 
 
@@ -741,64 +769,76 @@ while(cap.isOpened()):
                 ext = cv.hconcat([np.array(cv.transpose(rvecs)), np.array(cv.transpose(tvecs))])
                 print("ext: ", ext)
 
-                if DetectedChessBoardnum == 1:
-                    extrinsics = ext
-                else:
-                    extrinsics = np.vstack((extrinsics, ext))
-
-                cv.drawChessboardCorners(frame, pattern_size, corners, found)
+                # if DetectedChessBoardnum == 1:
+                #     extrinsics = ext
+                # else:
+                #     extrinsics = np.vstack((extrinsics, ext))
 
                 #mask out the current chessboard
                 x,y,w,h = cv.boundingRect(corners)
-                margin=30
+                margin=40
                 cv.rectangle(frame_gray,(x-margin,y-margin),(x+w+margin,y+h+margin),255,-1)
-                cv.putText(frame, str(DetectedChessBoardnum), (x, y), cv.FONT_HERSHEY_COMPLEX, 2, (0,255,0), 5) 
+
+                if DetectedChessBoardnum > 0:
+                    cv.drawChessboardCorners(frame, pattern_size, calib_corners, True)
+                    cv.putText(frame, str(DetectedChessBoardnum), (x, y), cv.FONT_HERSHEY_COMPLEX, 2, (0,255,0), 5) 
+
+
+                
                 # cv.imshow('masked chessboard', frame_gray)
                 # cv.waitKey(0)                
             
             else:
                 print("Cannot find any chessboard! break!")
                 CanStillFound = False
+
+                if DetectedChessBoardnum > 0:
+                    x,y,w,h = cv.boundingRect(calib_corners)
+                    cv.drawChessboardCorners(frame, pattern_size, calib_corners, True)
+                    cv.putText(frame, str(DetectedChessBoardnum), (x, y), cv.FONT_HERSHEY_COMPLEX, 2, (0,255,0), 5) 
+
+                #resized_frame = cv.resize(frame, (0,0), fx=0.5, fy=0.5) 
+                cv.imshow('Frame!', frame)       
                 break
 
 
 
-        if DetectedChessBoardnum > 0:
+        if DetectedChessBoardnum == SupposeCBNumber:
             print("Calibration result is: ", ref_rvec, ref_tvec)
-            board_width = 5
-            board_height = 4
-            square_size = 0.064
+            # board_width = 5
+            # board_height = 4
+            # square_size = 0.064
 
-            fig = plt.figure()
-            ax = fig.gca(projection='3d')
-            ax.set_aspect("equal")
+            # fig = plt.figure()
+            # ax = fig.gca(projection='3d')
+            # ax.set_aspect("equal")
 
-            cam_width = 0.064*6
-            cam_height = 0.048*6
-            scale_focal = 300
-            min_values, max_values = draw_camera_boards(ax, camera_matrix_manual.copy(), cam_width, cam_height,
-                                                        scale_focal, extrinsics, board_width,
-                                                        board_height, square_size, False)
+            # cam_width = 0.064*6
+            # cam_height = 0.048*6
+            # scale_focal = 300
+            # min_values, max_values = draw_camera_boards(ax, camera_matrix_manual.copy(), cam_width, cam_height,
+            #                                             scale_focal, extrinsics, board_width,
+            #                                             board_height, square_size, False)
 
-            X_min = min_values[0]
-            X_max = max_values[0]
-            Y_min = min_values[1]
-            Y_max = max_values[1]
-            Z_min = min_values[2]
-            Z_max = max_values[2]
-            max_range = np.array([X_max-X_min, Y_max-Y_min, Z_max-Z_min]).max() / 2.0
+            # X_min = min_values[0]
+            # X_max = max_values[0]
+            # Y_min = min_values[1]
+            # Y_max = max_values[1]
+            # Z_min = min_values[2]
+            # Z_max = max_values[2]
+            # max_range = np.array([X_max-X_min, Y_max-Y_min, Z_max-Z_min]).max() / 2.0
 
-            mid_x = (X_max+X_min) * 0.5
-            mid_y = (Y_max+Y_min) * 0.5
-            mid_z = (Z_max+Z_min) * 0.5
-            ax.set_xlim(mid_x - max_range, mid_x + max_range)
-            ax.set_ylim(mid_y - max_range, mid_y + max_range)
-            ax.set_zlim(mid_z - max_range, mid_z + max_range)
+            # mid_x = (X_max+X_min) * 0.5
+            # mid_y = (Y_max+Y_min) * 0.5
+            # mid_z = (Z_max+Z_min) * 0.5
+            # ax.set_xlim(mid_x - max_range, mid_x + max_range)
+            # ax.set_ylim(mid_y - max_range, mid_y + max_range)
+            # ax.set_zlim(mid_z - max_range, mid_z + max_range)
 
-            ax.set_xlabel('x')
-            ax.set_ylabel('z')
-            ax.set_zlabel('-y')
-            ax.set_title('Extrinsic Parameters Visualization')
+            # ax.set_xlabel('x')
+            # ax.set_ylabel('z')
+            # ax.set_zlabel('-y')
+            # ax.set_title('Extrinsic Parameters Visualization')
 
             for item in fitting_error:
                 print("fitting error: ", item)
@@ -806,12 +846,16 @@ while(cap.isOpened()):
             FinishCalibration = True
             # cv.imshow('chessboard corners', frame)
             # cv.waitKey(0)   
-            # plt.show()       
+            # plt.show()    
+            # 
+        elif DetectedChessBoardnum > 0:
+            print("Found at least one, but not meeting SupposeCBNumber=", SupposeCBNumber)
+
 
     ratio = 2.0
     ratioint = int(ratio)
     pick_inregion=[]
-    margin=15
+    margin=0 #15
     if frame.any() and FinishCalibration:
         starts = time.time()
         frame_display = frame.copy()
@@ -821,7 +865,7 @@ while(cap.isOpened()):
             resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 
 
             start = time.time()
-            rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(32,32), scale=1.05)
+            rects, weight = hog.detectMultiScale(resized_frame, winStride=(8, 8), padding=(2,2), scale=1.05)
             #print("hog.detectMultiScale took {} seconds.".format(time.time() - start))
             
             found_filtered = []
@@ -845,7 +889,7 @@ while(cap.isOpened()):
             for (xA, yA, xB, yB) in pick:
                 ground_center = ((xA+xB)*0.5*ratio, max(yA, yB)*ratio)
                 dist = cv2.pointPolygonTest(regionpts,ground_center,True)
-                if not dist < -1 :
+                if not IsCheckInsidePolygon or not dist < -1 :
                     marginpt = ((xA +margin)*ratioint, (yA+margin)*ratioint, (xB-margin)*ratioint, (yB-margin)*ratioint)
                     pick_inregion.append(marginpt)
                     cv.rectangle(frame_display, (marginpt[0], marginpt[1]), (marginpt[2], marginpt[3]), (0, 255, 0), 2)        
@@ -861,11 +905,11 @@ while(cap.isOpened()):
         #print("whole loop took {} seconds.".format(time.time() - starts))
 
         cv.imshow('pedestrian detection', bigger_frame_reproject)        
-        cv.imshow('localization', Lmap_localized)      
+        #cv.imshow('localization', Lmap_localized)      
 
         #Pending for debug
-        if IsEachFrameDebug and len(rects)>0:
-            cv.waitKey(5000)
+        #if IsEachFrameDebug and len(rects)>0:
+        cv.waitKey(200)
 
     #cv.imshow('fgmask',resized_fgmask)
     #cv.imshow('axis',resized_fitline)
