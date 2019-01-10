@@ -188,19 +188,26 @@ def PrintLocalization(Lmap, bigger_frame, pick, ratio, Size_of_w, physical_size,
         cv.putText(bigger_frame_reproject, porgchar, (int(org[0]+30), int(org[1])+30), cv.FONT_HERSHEY_COMPLEX, 0.5, (255,0,0), 1)              
         print("CB origin: ", org, "CB coord: ", cv.transpose(resultorgg), ", gps coord: ", org_gps_coord)
 
-    
-    test_gps_coord = RecoverGPSCoord(np.array([[0], [-6.045], [0]]))
-    print("test_gps_coord: ", test_gps_coord)
+    test_gps_coord = RecoverGPSCoord(np.array([[1.125], [0], [0]]))
+    print("test_gps_coord: ", test_gps_coord)    
+    test_gps_coord2 = RecoverGPSCoord(np.array([[0], [-6.045], [0]]))
+    print("test_gps_coord2: ", test_gps_coord2)
 
     return Lmap_localized, bigger_frame_reproject
 
 def draw_axis_and_ptgrid(img, corners, imgpts, ptgrid):
 
-    cv.drawChessboardCorners(img, pattern_size, corners, True)
-    corner = tuple(corners[0].ravel())
-    img = cv.line(img, corner, tuple(imgpts[0].ravel()), (0,0,255), 3)
-    img = cv.line(img, corner, tuple(imgpts[1].ravel()), (0,255,0), 3)
-    img = cv.line(img, corner, tuple(imgpts[2].ravel()), (255,0,0), 3)
+    count=0
+    for con in corners:
+        cv.drawChessboardCorners(img, pattern_size, con, True)
+
+        #draw axis
+        corner = tuple(con[0].ravel())
+        img = cv.line(img, corner, tuple(imgpts[count][0].ravel()), (0,0,255), 3)
+        img = cv.line(img, corner, tuple(imgpts[count][1].ravel()), (0,255,0), 3)
+        img = cv.line(img, corner, tuple(imgpts[count][2].ravel()), (255,0,0), 3)
+
+        count=count+1
 
     # Also draw a point grid in the z-plane for debug purpose
     if IsPlottingPtGrid:
@@ -449,6 +456,8 @@ grid = np.float32([[0.5,-0.5,0], [0.5,0,0], [0.5,0.5,0],
 
 cb_to_ecef_transform = None
 OtherCBOrigin2D=[]
+OtherCBCorners=[]
+OtherCBImgpt=[]
 
 # def draw(img, corners, imgpts):
 #     corner = tuple(corners[0].ravel())
@@ -729,6 +738,7 @@ while(cap.isOpened()):
                 #rms, camera_matrix, dist_coefs, rvecs, tvecs = cv.calibrateCamera(obj_points, img_points, (w, h), cameraMatrix=camera_matrix_manual, distCoeffs=dist_coefs_manual, flags=cv.CALIB_USE_INTRINSIC_GUESS+ cv.CALIB_FIX_K1+ cv.CALIB_FIX_K2+ cv.CALIB_FIX_K3+ cv.CALIB_FIX_K4+ cv.CALIB_FIX_K5)
                 #print(img_points[0][0])
                 returnval, rvecs, tvecs = cv.solvePnP(np.array(obj_points), np.array(img_points),camera_matrix_manual, dist_coefs_manual )
+                imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
 
                 if cb_square_dist > largest_cb_square_dist:
                     print("This chessboard is larger, use it as calibration chessboard!")
@@ -736,14 +746,17 @@ while(cap.isOpened()):
                     ref_rvec = rvecs
                     ref_tvec = tvecs
                     #print(axis)
-                    imgpts2, jac2 = cv.projectPoints(axis, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
+                    
                     calib_corners = corners
                     calib_imgpt = imgpts2
+                    
                     imgpts3, jac3 = cv.projectPoints(grid, rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                     ptgrid = imgpts3
                     #frame = draw(frame,calib_corners,calib_imgpt)
 
+                OtherCBCorners.append(corners)
                 OtherCBOrigin2D.append(corners[0])
+                OtherCBImgpt.append(imgpts2)
 
                 imgpts, jac = cv.projectPoints(np.array(obj_points), rvecs, tvecs, camera_matrix_manual, dist_coefs_manual)
                 #print(imgpts[0][0])
@@ -859,7 +872,7 @@ while(cap.isOpened()):
     if frame.any() and FinishCalibration:
         starts = time.time()
         frame_display = frame.copy()
-        frame_display = draw_axis_and_ptgrid(frame_display,calib_corners,calib_imgpt, ptgrid)
+        frame_display = draw_axis_and_ptgrid(frame_display,OtherCBCorners,OtherCBImgpt, ptgrid)
 
         if IsDetectPeople:
             resized_frame = cv.resize(frame, (0,0), fx=(1/ratio), fy=(1/ratio)) 

@@ -12,25 +12,22 @@ print("lat2, lon2: ", lat2, ", ", lon2)
 fs_read.release()
 
 
-def degreesToRadians(degrees):
-  return degrees * math.pi / 180
-
 earthRadiusKm = 6371
 
 _GEOD = pyproj.Geod(ellps='WGS84')
 a,a2,d = _GEOD.inv(lon1,lat1,lon2,lat2) 
 print("pyproj   dist:", d, "m")
 
-dLat = degreesToRadians(lat2-lat1)
-dLon = degreesToRadians(lon2-lon1)
+dLat = math.radians(lat2-lat1)
+dLon = math.radians(lon2-lon1)
 
-lat1 = degreesToRadians(lat1)
-lat2 = degreesToRadians(lat2)
+lat1 = math.radians(lat1)
+lat2 = math.radians(lat2)
 
 a = math.sin(dLat/2) * math.sin(dLat/2) + math.sin(dLon/2) * math.sin(dLon/2) * math.cos(lat1) * math.cos(lat2); 
 c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)); 
 dist = earthRadiusKm * c *1000.0
-print("opensrc dist: ", dist, "m")
+#print("opensrc dist: ", dist, "m")
 
 
 
