@@ -1,0 +1,21 @@
+sudo vi /lib/systemd/system/volvo.service
+
+[Unit]
+Description=volvo visual positioning
+After=multi-user.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+ExecStart=/root/anaconda3/bin/python3 /root/pytorch_objectdetecttrack/volvo_deploy.py
+StandardInput=tty-force
+
+[Install]
+WantedBy=multi-user.target
+
+sudo systemctl daemon-reload
+sudo systemctl enable volvo.service
+sudo systemctl start volvo.service
+sudo systemctl status volvo.service
+
+sudo systemctl restart volvo.service
