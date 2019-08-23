@@ -9,6 +9,9 @@ Conflicts=getty@tty1.service
 Type=simple
 ExecStart=/root/anaconda3/bin/python3 /root/pytorch_objectdetecttrack/volvo_deploy.py
 StandardInput=tty-force
+RemainAfterExit=no
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
