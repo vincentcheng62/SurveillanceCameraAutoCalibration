@@ -1,0 +1,16 @@
+%YAML:1.0
+---
+gps_matrix: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [2, 31.41004185, 121.22030868,
+         13, 31.41023876, 121.22062981, 
+         21, 31.41028200, 121.22083990]
+cross_subpixel_matrix: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [ 2, 1671, 1792,
+          13, 1440, 1417,
+          21, 1911, 1327]
