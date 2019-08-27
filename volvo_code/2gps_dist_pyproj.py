@@ -1,5 +1,6 @@
 import cv2
 import math
+import pyproj
 
 fs_read = cv2.FileStorage("twogps.yml", cv2.FILE_STORAGE_READ)
 lat1 = fs_read.getNode("lat1").real()
