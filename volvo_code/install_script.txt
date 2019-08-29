@@ -1,0 +1,63 @@
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/cuda-ubuntu1604.pin
+sudo mv cuda-ubuntu1604.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget http://developer.download.nvidia.com/compute/cuda/10.1/Prod/local_installers/cuda-repo-ubuntu1604-10-1-local-10.1.243-418.87.00_1.0-1_amd64.deb
+sudo dpkg -i cuda-repo-ubuntu1604-10-1-local-10.1.243-418.87.00_1.0-1_amd64.deb
+sudo apt-key add /var/cuda-repo-10-1-local-10.1.243-418.87.00/7fa2af80.pub
+sudo apt-get update
+sudo apt-get -y install cuda
+1510  sudo apt-get update
+ 1511  sudo apt-get clean
+ 1512  sudo rm -r /var/lib/apt/lists/*
+ 1513  sudo apt-get update
+ 1514  sudo apt-get install cuda
+ 1515  sudo apt-get install -f
+ 1516  sudo rm -vf /var/lib/apt/lists/*
+ 1517  sudo apt-get update
+ 1518  sudo apt-get update -o Acquire::CompressionTypes::Order::=gz
+ 1519  sudo apt-get upgrade
+ 1520  ifconfig
+ 1521  sudo apt-get install cuda
+ 1523  sudo dpkg -i cuda-repo-ubuntu1604-10-1-local-10.1.168-418.67_1.0-1_amd64.deb 
+ 1525  sudo apt-get update
+ 1526  sudo apt install appstream/xenial-backports
+ 1527  appstreamcli --version
+ 1528  sudo apt-get update
+ 1529  sudo apt-get install cuda
+ 1530  nvidia-smi
+
+1537  sudo apt install python3-pip
+ 1538  pip3 install torch
+ 1540  pip3 install torchvision
+ 1542  pip3 install msgpack
+ 1544  pip3 install opencv-python
+1553  sudo apt-get install python3-matplotlib
+1561  sudo vim /usr/bin/pip3
+
+????:from pip import mainif __name__ == '__main__':    sys.exit(main())123??:from pip import __main__if __name__ == '__main__':    sys.exit(__main__._main())
+ ———————————————— 
+
+1563  sudo pip3 install imutils
+ 1565  sudo pip3 install pyproj
+ 1567  sudo pip3 install kafka
+1576  git clone https://github.com/scivision/pymap3d
+ 1577  cd pymap3d/
+1579  sudo pip3 install -e .
+1583  sudo pip3 install numba
+sudo pip3 install scikit-image
+1593  sudo pip3 install scikit-learn
+
+ 1588  pip3 install --upgrade pip
+ 1590  pip3 install --upgrade setuptools
+ 1591  sudo pip3 install --upgrade setuptools
+1595  sudo pip3 install filterpy
+
+sudo pip3 install ipython tornado
+sudo pip3 install PyInstaller
+
+pip uninstall torchvision
+pip install torchvision==0.2.2.post3
+
+pyinstaller --onefile volvo_deploy.py --
+export LD_LIBRARY_PATH=/home/ubuntu/.local/lib/python3.5/site-packages/torch/lib/
+
+
