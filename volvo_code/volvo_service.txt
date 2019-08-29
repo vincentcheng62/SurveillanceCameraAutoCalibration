@@ -6,6 +6,7 @@ After=multi-user.target
 Conflicts=getty@tty1.service
 
 [Service]
+User=ubuntu
 Type=simple
 ExecStart=/root/anaconda3/bin/python3 /root/pytorch_objectdetecttrack/volvo_deploy.py
 StandardInput=tty-force
@@ -22,3 +23,5 @@ sudo systemctl start volvo.service
 sudo systemctl status volvo.service
 
 sudo systemctl restart volvo.service
+
+journalctl -u volvo.service
