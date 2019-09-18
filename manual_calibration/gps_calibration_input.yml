@@ -1,0 +1,21 @@
+%YAML:1.0
+---
+antenna_height_in_m: 0.12
+cb_x_axis_to_north_in_deg: 35.54
+IsUsingCampusNorthCalibrationMethod: 'True'
+gps_matrix: !!opencv-matrix
+   rows: 4
+   cols: 3
+   dt: d
+   data: [22.4265695, 114.2113882, 5.795, 
+       22.4265781, 114.2113949, 5.795, 
+       22.4265677, 114.2113959, 5.795, 
+       22.4265765, 114.2114036, 5.795]
+world_coord_matrix: !!opencv-matrix
+   rows: 4
+   cols: 3
+   dt: d
+   data: [ 0, 0, 0, 
+       1.125, 0, 0,
+       0, 0.75, 0,
+       1.125, 0.75, 0]

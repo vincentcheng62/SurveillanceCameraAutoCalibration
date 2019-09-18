@@ -1,0 +1,10 @@
+%YAML:1.0
+---
+square_size_in_m: 0.0518
+IsRotated: 'False'
+pattern_size_x: 6
+pattern_size_y: 4
+debugdir: './output2/'
+img_mask: 'DS-2CD-2683G0-IZSHK_1080p/*.jpg'
+number_of_thread: 4
+

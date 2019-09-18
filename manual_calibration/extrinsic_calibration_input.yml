@@ -1,0 +1,35 @@
+%YAML:1.0
+---
+IsSaveToVideo: 'False'
+IsBgProcessing: 'True' # otherwise will be slow for texture rich bg
+IsSaveIntermediateImageToDebug: 'True'
+IsPlottingPtGrid: 'True'
+IsDebugCBCanFound: 'True'
+IsLiveWindowDisplay: 'True'
+IsUsingPredefinedMaskForCB: 'True'
+
+
+square_size_in_m: 0.375
+videopath: 'IMG_2016.MOV'
+pattern_size_x: 4
+pattern_size_y: 3
+margin_when_masking_out_founded_chessboard: 40
+thrhd_grayvalue_for_whitepart_of_chessboard: 245
+morph_open_kernel_radius: 5
+dilate_kernel_for_cb_mask_radius: 50
+display_axis_length_in_m: 5.0
+grid_pt_seperation: 0.375
+grid_pt_size: 20
+video_save_fps: 20
+
+current_fps_for_skip_sec: 20
+skip_sec: 0
+SupposeCBNumber: 1 # there may be more than one chessboard exist in FOV, one for calibration, the rest for testing
+
+#top-left-x, top-left-y, weight, height
+predefined_mask: !!opencv-matrix
+   rows: 2
+   cols: 4
+   dt: d
+   data: [0, 0, 1900, 900, 
+       700, 900, 1900, 1060]
