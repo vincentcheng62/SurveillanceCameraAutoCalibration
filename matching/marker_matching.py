@@ -5,6 +5,7 @@ import os
 import math
 from osgeo import gdal
 from sklearn.utils.linear_assignment_ import linear_assignment
+import random
 
 def simplify_contour(contour, n_corners=4):
     '''
@@ -43,6 +44,94 @@ def angle_cos(p0, p1, p2):
 def namestr(obj, namespace):
     return [name for name in namespace if namespace[name] is obj]
 
+def linelength(line):
+    return math.sqrt(math.pow((line[2]-line[0]),2)+math.pow((line[3]-line[1]),2))
+
+def slope_in_angle(line):
+    return math.degrees(math.atan2(1.0*line[3]-1.0*line[1], (1.0*line[2]-1.0*line[0])))
+
+def slope(line):
+    return (1.0*line[3]-1.0*line[1])/(1.0*line[2]-1.0*line[0])
+
+def checksameline(line1, line2):
+    dist1 = math.sqrt(math.pow((line1[0]-line2[0]),2)+math.pow((line1[1]-line2[1]),2))
+    dist2 = math.sqrt(math.pow((line1[0]-line2[2]),2)+math.pow((line1[1]-line2[3]),2))
+    dist3 = math.sqrt(math.pow((line1[2]-line2[0]),2)+math.pow((line1[3]-line2[1]),2))
+    dist4 = math.sqrt(math.pow((line1[2]-line2[2]),2)+math.pow((line1[3]-line2[3]),2))
+
+    threshold = 2
+    if min(dist1, dist2) < threshold and min(dist3, dist4) < threshold:
+        return True
+    else:
+        return False
+
+def intersect(line1, line2): 
+    pt1 = (line1[0], line1[1])
+    pt2 = (line1[2], line1[3])
+    ptA = (line2[0], line2[1])
+    ptB = (line2[2], line2[3])
+    """ this returns the intersection of Line(pt1,pt2) and Line(ptA,ptB)
+        
+        returns a tuple: (xi, yi, valid, r, s), where
+        (xi, yi) is the intersection
+        r is the scalar multiple such that (xi,yi) = pt1 + r*(pt2-pt1)
+        s is the scalar multiple such that (xi,yi) = pt1 + s*(ptB-ptA)
+            valid == 0 if there are 0 or inf. intersections (invalid)
+            valid == 1 if it has a unique intersection ON the segment    """
+
+    DET_TOLERANCE = 0.00000000001
+
+    # the first line is pt1 + r*(pt2-pt1)
+    # in component form:
+    x1, y1 = pt1;   x2, y2 = pt2
+    dx1 = x2 - x1;  dy1 = y2 - y1
+
+    dx1 = dx1 + random.random()*0.001
+    dy1 = dy1 + random.random()*0.001
+
+    # the second line is ptA + s*(ptB-ptA)
+    x, y = ptA;   xB, yB = ptB;
+    dx = xB - x;  dy = yB - y;
+
+    dx = dx + random.random()*0.001
+    dy = dy + random.random()*0.001
+    # we need to find the (typically unique) values of r and s
+    # that will satisfy
+    #
+    # (x1, y1) + r(dx1, dy1) = (x, y) + s(dx, dy)
+    #
+    # which is the same as
+    #
+    #    [ dx1  -dx ][ r ] = [ x-x1 ]
+    #    [ dy1  -dy ][ s ] = [ y-y1 ]
+    #
+    # whose solution is
+    #
+    #    [ r ] = _1_  [  -dy   dx ] [ x-x1 ]
+    #    [ s ] = DET  [ -dy1  dx1 ] [ y-y1 ]
+    #
+    # where DET = (-dx1 * dy + dy1 * dx)
+    #
+    # if DET is too small, they're parallel
+    #
+    DET = (-dx1 * dy + dy1 * dx)
+
+    if math.fabs(DET) < DET_TOLERANCE: return (0,0,0,0,0)
+
+    # now, the determinant should be OK
+    DETinv = 1.0/DET
+
+    # find the scalar amount along the "self" segment
+    r = DETinv * (-dy  * (x-x1) +  dx * (y-y1))
+
+    # find the scalar amount along the input line
+    s = DETinv * (-dy1 * (x-x1) + dx1 * (y-y1))
+
+    # return the average of the two descriptions
+    xi = (x1 + r*dx1 + x + s*dx)/2.0
+    yi = (y1 + r*dy1 + y + s*dy)/2.0
+    return ( xi, yi, 1, r, s )
+
 #input color image
 def find_squares(img):
     img = cv2.GaussianBlur(img, (5, 5), 0)
@@ -64,6 +153,85 @@ def find_squares(img):
                     if max_cos < 0.1:
                         squares.append(cnt)
 
+
+def lines_merging(lines):
+    new_extended_lines=[]
+    lines_with_info=[]
+    line_min_length=5
+    lines_angle_diff_in_degree=5
+
+    # make larger, something may miss the one and connect between (1) (-) (3)
+    extension_ratio=2.0
+    maxgap=50
+
+    for line in lines:
+        length=linelength(line[0])
+
+        if length>line_min_length:
+            lines_with_info.append([line[0], slope_in_angle(line[0]), length])
+
+    for line1 in lines_with_info:
+
+        CanMerge=False
+        for line2 in lines_with_info:
+
+            if not line1 is line2:
+
+                abs_diff_in_angle = math.fabs(line1[1]-line2[1])
+                if abs_diff_in_angle < lines_angle_diff_in_degree:
+
+                    (xi, yi, valid, r, s) = intersect(line1[0], line2[0])
+                    if valid == 1:
+
+                        max_x = max(line1[0][0], line1[0][2], line2[0][0], line2[0][2])
+                        min_x = min(line1[0][0], line1[0][2], line2[0][0], line2[0][2])
+                        max_y = max(line1[0][1], line1[0][3], line2[0][1], line2[0][3])
+                        min_y = min(line1[0][1], line1[0][3], line2[0][1], line2[0][3])
+                        # r is the scalar multiple such that (xi,yi) = pt1 + r*(pt2-pt1)
+                        # s is the scalar multiple such that (xi,yi) = pt1 + s*(ptB-ptA)
+
+                        if xi >= min_x and xi <= max_x and yi >= min_y and yi <= max_y:
+
+                            if r > 0: # intersection is along line1 original direction
+                                if r >=1 and r < 1.0+extension_ratio and (r-1)*line1[2]< maxgap:
+                                    if s > 0 :
+                                        if s >=1 and s < 1.0+extension_ratio and (s-1)*line2[2]< maxgap:                                
+                                            new_extended_lines.append([[line1[0][0], line1[0][1], xi, yi]])
+                                            new_extended_lines.append([[line2[0][0], line2[0][1], xi, yi]])
+                                            CanMerge=True
+
+                                    else:
+                                        if s >= -1*extension_ratio and (-s)*line2[2]< maxgap:
+                                            new_extended_lines.append([[line1[0][0], line1[0][1], xi, yi]])
+                                            new_extended_lines.append([[line2[0][2], line2[0][3], xi, yi]])   
+                                            CanMerge=True                                 
+                            
+                            else:
+                                if r >= -1*extension_ratio and (-r)*line1[2]< maxgap:
+                                    if s > 0 :
+                                        if s >=1 and s < 1.0+extension_ratio and (s-1)*line2[2]< maxgap:                                
+                                            new_extended_lines.append([[line1[0][2], line1[0][3], xi, yi]])
+                                            new_extended_lines.append([[line2[0][0], line2[0][1], xi, yi]])
+                                            CanMerge=True
+
+                                    else:
+                                        if s >= -1*extension_ratio and (-s)*line2[2]< maxgap:
+                                            new_extended_lines.append([[line1[0][2], line1[0][3], xi, yi]])
+                                            new_extended_lines.append([[line2[0][2], line2[0][3], xi, yi]]) 
+                                            CanMerge=True   
+
+                    else:
+                        print("Invalid lines")
+                # else:
+                #     print("Invalid angle: ", abs_diff_in_angle)
+
+        # also append the original segment if no merging happen to him
+        if not CanMerge:
+            new_extended_lines.append(line1)
+
+    return new_extended_lines
+
+
 print("cv2.__version__: ", cv2.__version__)
    
 ###### Input parameters ######
@@ -82,10 +250,10 @@ orthomosaic_geotiff_path = 'marker40m.tif'
 #img_path='marker6m.jpg'
 
 # dont scale down survelliance camera image, since marker at the far end will be very small
-scaledownratio = [1.0, 3.0]
+scaledownratio = [1.0, 1.0]
 
 # 2 are different since in general ortho geotiff photos are brighter
-thrhd_grayvalue_high_for_whitepart_of_chessboard=[160,220]
+thrhd_grayvalue_high_for_whitepart_of_chessboard=[175,220]
 thrhd_grayvalue_low_for_whitepart_of_chessboard=[50,70]
 morph_open_kernel_radius_in_px=5
 morph_close_kernel_radius_in_px=10
@@ -93,9 +261,12 @@ dilate_kernel_size_in_px_for_cb_mask_radius=6
 dilate_kernel_size_for_white=60
 approxPolyDP_epsilon=20
 IsFindDarkAlsoNearSegmentedWhite=False
+IsFindWhiteOnlyNearColorSeg=False
 length_approx_threshold=[2,7]
 area_lower_threshold=1000
 area_upper_threshold=15000
+boundingrectmargin=[7, 20]
+mergedlineminthreshold=[7, 45]
 
 print("orthomosaic_geotiff_path: ", orthomosaic_geotiff_path)
 print("MarkerSize(in m): ", MarkerSize)
@@ -104,7 +275,9 @@ print("img_path_list: ", img_path_list)
 print("marker_area_variation: ", marker_area_variation)
 print("area_to_perimeter_ratio_threshold: ", area_to_perimeter_ratio_threshold)
 print("IsFindDarkAlsoNearSegmentedWhite: ", IsFindDarkAlsoNearSegmentedWhite)
+print("IsFindWhiteOnlyNearColorSeg: ", IsFindWhiteOnlyNearColorSeg)
 print("length_approx_threshold: ", length_approx_threshold)
+print("boundingrectmargin: ", boundingrectmargin)
 
 
 print("thrhd_grayvalue_high_for_whitepart_of_chessboard: ", thrhd_grayvalue_high_for_whitepart_of_chessboard)
@@ -157,7 +330,7 @@ for color in colorlist:
 # 255*0.3 = 76.5
 # 255*0.9 = 229.5
 lowerhsvlist[1][1]=55
-lowerhsvlist[1][2]=160
+lowerhsvlist[1][2]=140
 
 # special treatment for our green, S=66%, V=80%
 lowerhsvlist[2][1]=150
@@ -328,8 +501,15 @@ for i in range(0, len(img_path_list)):
 
 
     ##### old ends #####
+    color_or_bw=None
+    if IsFindWhiteOnlyNearColorSeg:
+        hsvmask_asmask = cv2.morphologyEx(hsvmask, cv2.MORPH_OPEN, morph_open_kernel)
+        hsvmask_asmask = cv2.dilate(hsvmask_asmask,dilate_kernel_for_cb_mask,iterations = 1)        
+        hsvmask_asmask = cv2.dilate(hsvmask_asmask,dilate_kernel_for_cb_mask,iterations = 1)     
 
-    color_or_bw = cv2.bitwise_or(frame_bw, hsvmask)  
+        color_or_bw = cv2.bitwise_or(frame_bw, hsvmask, mask=hsvmask_asmask)   
+    else:
+        color_or_bw = cv2.bitwise_or(frame_bw, hsvmask)  
 
     frame_bw = cv2.morphologyEx(frame_bw, cv2.MORPH_OPEN, morph_open_kernel)
     color_or_bw = cv2.dilate(color_or_bw,dilate_kernel_for_cb_mask,iterations = 1)
@@ -417,14 +597,17 @@ for i in range(0, len(img_path_list)):
         M = cv2.moments(cnt)
         cX = int(M["m10"] / M["m00"])
         cY = int(M["m01"] / M["m00"])
+        _,_,ww,hh = cv2.boundingRect(cnt)
         # Shortlisting the regions based on there area. 
         #Isconvex = cv2.isContourConvex(cnt)
 
         # use area to do basic filtering
-        if area > area_lower_threshold and area < area_upper_threshold:  
+        # in survelliance camera, due to viewing angle, ww>hh
+        if area > area_lower_threshold and area < area_upper_threshold and ((ww>hh*2 and i is 0) or i is 1):  
 
             # hull.append(cv2.convexHull(cnt, False))   
             # cv2.drawContours(approximg, hull, 0, color, 5)      
+            approxPolyDP_epsilon = 0.05*cv2.arcLength(cnt,True)
             approx = cv2.approxPolyDP(cnt,  approxPolyDP_epsilon, False) 
             
 
@@ -474,10 +657,14 @@ for i in range(0, len(img_path_list)):
                     good_contours.append(approx)
 
                     x,y,w,h = cv2.boundingRect(approx)
-                    imgg = frame_gray[y:y+h,x:x+w]
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img.jpg'), imgg)
-                    imgg_color = img2[y:y+h,x:x+w]            
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_color.jpg'), imgg_color)
+                    m = boundingrectmargin[i]
+                    centerx = cX-x+m
+                    centery = cY-y+m
+
+                    imgg = frame_gray[max(0, y-m): min(y+h+2*m, frame_gray.shape[0]), max(0, x-m):min(x+w+2*m, frame_gray.shape[1])]
+                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_gray.jpg'), imgg)
+                    imgg_color = img2[max(0, y-m): min(y+h+2*m, frame_gray.shape[0]), max(0, x-m):min(x+w+2*m, frame_gray.shape[1])]           
+                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_color.jpg'), imgg_color)
 
                     imgg_fs = imgg_color.copy()
                     squares_contours = find_squares(imgg_fs)
@@ -485,7 +672,7 @@ for i in range(0, len(img_path_list)):
                     cv2.drawContours(imgg_fs, squares_contours, -1, (0,255,0), 3)
                     # for iy in range(corners.shape[0]):
                     #     cv2.circle(imgg_fs, (corners[i,0,0], corners[i,0,1]), 3, (0,255,0), cv2.FILLED)                    
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_fs.jpg'), imgg_fs)                      
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_fs.jpg'), imgg_fs)                      
 
                     # Parameters for Shi-Tomasi algorithm
                     qualityLevel = 0.01
@@ -502,15 +689,143 @@ for i in range(0, len(img_path_list)):
                     imgg_gftt = imgg_color.copy()
                     for iy in range(corners.shape[0]):
                         cv2.circle(imgg_gftt, (corners[i,0,0], corners[i,0,1]), 3, (0,255,0), cv2.FILLED)                    
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_gftt.jpg'), imgg_gftt)  
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_gftt.jpg'), imgg_gftt)  
 
                     edges = cv2.Canny(imgg,100,200, 7)
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_canny.jpg'), edges)  
+                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_canny.jpg'), edges)  
 
+                    # Harris corner detector
+                    img_harris = imgg_color.copy()
+                    blockSize = 2
+                    apertureSize = 3
+                    k = 0.04
+                    thresh = 100
+                    # Detecting corners
+                    dst = cv2.cornerHarris(imgg, blockSize, apertureSize, k)
+                    # Normalizing
+                    dst_norm = np.empty(dst.shape, dtype=np.float32)
+                    cv2.normalize(dst, dst_norm, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+                    dst_norm_scaled = cv2.convertScaleAbs(dst_norm)
+                    # Drawing a circle around corners
+                    for iii in range(dst_norm.shape[0]):
+                        for jjj in range(dst_norm.shape[1]):
+                            if int(dst_norm[iii,jjj]) > thresh:
+                                cv2.circle(img_harris, (jjj,iii), 5, (0,255,0), 2)
+
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + 'harris.jpg'), img_harris)   
+                    
+
+                    img_lsd = imgg_color.copy()
+                    img_lsd_filter = imgg_color.copy()
+                    #Create default parametrization LSD
+                    lsd = cv2.createLineSegmentDetector(0)
+                    #lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_ADV, 1.0, )
+
+                    #Detect lines in the image
+                    lineslsd = lsd.detect(imgg)[0] #Position 0 of the returned tuple are the detected lines
+                    img_lsd = lsd.drawSegments(img_lsd,lineslsd)
+                    print("len(lineslsd)", len(lineslsd))
+                    #print("lineslsd: ", lineslsd)
+
+                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd.jpg'), img_lsd)   
+                    lineslsd_filtered=[]
+                    for line in lineslsd:
+                        length = linelength(line[0])
+                        if length > 15:
+                            lineslsd_filtered.append(line)
+
+                    #print("len(lineslsd_filtered)", len(lineslsd_filtered))
+                    #Draw detected lines in the image
+
+                    if len(lineslsd_filtered)>0:
+                        img_lsd_filter = lsd.drawSegments(img_lsd_filter,np.asarray(lineslsd_filtered))
+                        #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_filter.jpg'), img_lsd_filter)   
+
+
+                    img_lsd_merge = imgg_color.copy()
+                    line_merged = lines_merging(lineslsd)
+
+                    #print("len(line_merged)", len(line_merged))
+                    #print("line_merged: ", np.asarray(line_merged))
+                    if len(line_merged)>0:
+                        #img_lsd_merge = lsd.drawSegments(img_lsd_merge,np.asarray(line_merged))
+                        for merge_line in line_merged:
+                            cv2.line(img_lsd_merge,(int(merge_line[0][0]), int(merge_line[0][1])),(int(merge_line[0][2]), int(merge_line[0][3])),(0,0,255),1)  
+
+                        cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_merge.jpg'), img_lsd_merge)   
+
+                    line_merged_nms=[]
+                    for merge_line in line_merged:
+                        isRepeat=False
+                        for merge_line2 in line_merged:
+                            if not merge_line is merge_line2 and checksameline(merge_line[0], merge_line2[0]):
+                                isRepeat = True
+
+                        if not isRepeat:
+                            line_merged_nms.append(merge_line)
+                        else:
+                            isExist=False
+                            for linee in line_merged_nms:
+                                if checksameline(linee[0], merge_line[0]):
+                                    isExist=True
+                            
+                            if not isExist:
+                                line_merged_nms.append(merge_line)
+
+                    print("len(line_merged_nms)", len(line_merged_nms))
+                    #print("line_merged_nms: ", np.asarray(line_merged_nms))
+
+                    img_lsd_merge_thd_list=[]
+                    img_lsd_merge_thd = imgg_color.copy()
+                    for merge_line in line_merged_nms:
+                        length = linelength(merge_line[0])
+                        if length > mergedlineminthreshold[i]:  
+                            img_lsd_merge_thd_list.append(merge_line)
+                            cv2.line(img_lsd_merge_thd,(int(merge_line[0][0]), int(merge_line[0][1])),(int(merge_line[0][2]), int(merge_line[0][3])),(0,0,255),1)  
+
+                        cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_merge_thd.jpg'), img_lsd_merge_thd)                                                        
+                    print("len(img_lsd_merge_thd_list)", len(img_lsd_merge_thd_list))
+
+                    img_lsd_merge_intersect = imgg_color.copy()
+                    convexhullpointlist=[]
+                    idx1=0
+                    if len(line_merged_nms)>0:
+                        #img_lsd_merge = lsd.drawSegments(img_lsd_merge,np.asarray(line_merged))
+                        for merge_line in line_merged_nms:
+                            idx2=0
+                            length = linelength(merge_line[0])
+                            if length > mergedlineminthreshold[i]:  
+                                for merge_line2 in line_merged_nms:
+                                    length2 = linelength(merge_line2[0])        
+                                    if length2 > mergedlineminthreshold[i]:  
+                                        if idx2 > idx1 and not checksameline(merge_line[0], merge_line2[0]):  
+                                            #print("Line for intersect: ", merge_line[0], merge_line2[0])
+                                            (xi, yi, valid, r, s) = intersect(merge_line[0], merge_line2[0])   
+                                            if valid == 1 and min(math.fabs(r-1.0), math.fabs(r)) < 0.8 and min(math.fabs(s-1.0), math.fabs(s)) < 0.8:
+                                                convexhullpointlist.append([[xi, yi]])
+                                                cv2.circle(img_lsd_merge_intersect, (int(xi), int(yi)), 5, (0,255,0), 2)
+
+                                    idx2=idx2+1
+
+                            idx1=idx1+1
+
+                        cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_mintersect.jpg'), img_lsd_merge_intersect)                       
+
+
+                    img_lsd_convexhull = imgg_color.copy()
+                    #print("np.asarray(convexhullpointlist)", np.asarray(convexhullpointlist))
+                    # if len(convexhullpointlist)>0:
+                    #     hull = cv2.convexHull(np.asarray(convexhullpointlist))
+                    #     for pt in hull:
+                    #         cv2.circle(img_lsd_merge_intersect, (int(pt[0]), int(pt[1])), 5, (0,255,0), 2)
+                    #     cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_convexhull.jpg'), img_lsd_convexhull)  
+                    
+                    
                     houghpic = imgg_color.copy()
                     houghparallelpic = imgg_color.copy()
                     lines=None
-                    lines = cv2.HoughLines(edges,2,(5.0*np.pi)/180,45)
+                    lines_in_2p=[]
+                    lines = cv2.HoughLines(edges,2,(5.0*np.pi)/180,60)
 
                     if not lines is None:
                         for aaa in range(0,lines.shape[0]):
@@ -525,9 +840,10 @@ for i in range(0, len(img_path_list)):
                             x2 = int(x0 - 1000*(-b))
                             y2 = int(y0 - 1000*(a))
 
-                            cv2.line(houghpic,(x1,y1),(x2,y2),(0,0,255),2)    
+                            cv2.line(houghpic,(x1,y1),(x2,y2),(0,0,255),2)  
+                            lines_in_2p.append([x1, y1, x2, y2])  
 
-                        cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_hough.jpg'), houghpic)      
+                        #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_hough.jpg'), houghpic)      
 
                     if not lines is None:
                         for aaa in range(0,lines.shape[0]):
@@ -536,20 +852,16 @@ for i in range(0, len(img_path_list)):
                             for bbb in range(0,lines.shape[0]):
                                 rho2,theta2 = lines[bbb,0]
 
-                                if not aaa is bbb and math.fabs(theta-theta2) < 0.1 and math.fabs(rho-rho2) > 5:
-                                    a = np.cos(theta)
-                                    b = np.sin(theta)
-                                    x0 = a*rho
-                                    y0 = b*rho
-                                    x1 = int(x0 + 1000*(-b))
-                                    y1 = int(y0 + 1000*(a))
-                                    x2 = int(x0 - 1000*(-b))
-                                    y2 = int(y0 - 1000*(a))
+                                #if not aaa is bbb and math.fabs(theta-theta2) < 0.1 and math.fabs(rho-rho2) > 5:
+                                if not aaa is bbb and math.fabs(math.fabs(theta-theta2)-1.5708) < 0.05:
 
-                                    cv2.line(houghparallelpic,(x1,y1),(x2,y2),(0,0,255),2)    
-                                    break
+                                    (xi, yi, valid, r, s) = intersect(lines_in_2p[aaa], lines_in_2p[bbb])
+                                    if valid == 1 and math.fabs(xi-centerx)< 3 and math.fabs(yi-centery)< 3 :
 
-                        cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_houghparallel.jpg'), houghparallelpic)                              
+                                        cv2.line(houghparallelpic,(lines_in_2p[aaa][0],lines_in_2p[aaa][1]),(lines_in_2p[aaa][2],lines_in_2p[aaa][3]),(0,0,255),2)    
+                                        break
+
+                        #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_hough_onlycross.jpg'), houghparallelpic)                              
 
 
                     im, contours, hierarchy = cv2.findContours(edges,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -559,7 +871,7 @@ for i in range(0, len(img_path_list)):
                         colorrr = colors[int(cnttt_id) % len(colors)]
                         cv2.drawContours(imgcon, contours, -1, colorrr, 1)
                         cnttt_id=cnttt_id+1
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_center_' + str(cX) + '_' + str(cY) + '_img_ctr.jpg'), imgcon)   
+                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_contour.jpg'), imgcon)   
 
 
 
