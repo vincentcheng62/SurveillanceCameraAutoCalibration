@@ -262,11 +262,15 @@ dilate_kernel_size_for_white=60
 approxPolyDP_epsilon=20
 IsFindDarkAlsoNearSegmentedWhite=False
 IsFindWhiteOnlyNearColorSeg=False
+IsUsingRefinedCorner=True
+RefinedCornerThreshold=[18,20]
+
 length_approx_threshold=[2,7]
 area_lower_threshold=1000
 area_upper_threshold=15000
-boundingrectmargin=[7, 20]
-mergedlineminthreshold=[7, 45]
+boundingrectmargin=[10, 20]
+mergedlineminthreshold=[12, 45]
+reflective_surface_thd=240
 
 print("orthomosaic_geotiff_path: ", orthomosaic_geotiff_path)
 print("MarkerSize(in m): ", MarkerSize)
@@ -274,10 +278,13 @@ print("orthomosaicscale(mm/px): ", orthomosaicscale)
 print("img_path_list: ", img_path_list)
 print("marker_area_variation: ", marker_area_variation)
 print("area_to_perimeter_ratio_threshold: ", area_to_perimeter_ratio_threshold)
+print("IsUsingRefinedCorner: ", IsUsingRefinedCorner)
 print("IsFindDarkAlsoNearSegmentedWhite: ", IsFindDarkAlsoNearSegmentedWhite)
 print("IsFindWhiteOnlyNearColorSeg: ", IsFindWhiteOnlyNearColorSeg)
 print("length_approx_threshold: ", length_approx_threshold)
 print("boundingrectmargin: ", boundingrectmargin)
+print("reflective_surface_thd: ", reflective_surface_thd)
+print("RefinedCornerThreshold: ", RefinedCornerThreshold)
 
 
 print("thrhd_grayvalue_high_for_whitepart_of_chessboard: ", thrhd_grayvalue_high_for_whitepart_of_chessboard)
@@ -426,16 +433,24 @@ for i in range(0, len(img_path_list)):
     
     # Reading same image in another variable and  
     # converting to gray scale. 
+
+    print("Read to gray image again...")    
     frame_gray = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE) 
+
+    print("Resize to gray image")       
     frame_gray = cv2.resize(frame_gray, (0,0), fx=(1/scaledownratio[i]), fy=(1/scaledownratio[i])) 
 
     cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_4raw_gray_resized.jpg'), frame_gray)    
 
+
+    print("Set highly reflective surface as 0...")
     # set 255 to 0 since orthomosaic has white boundary
-    for y in range(len(frame_gray)):
-        for x in range(len(frame_gray[0])):
-            if frame_gray[y][x] > 240: # since marker white is not reflective surface, will not be very close to 255
-                frame_gray[y][x] = 0
+    frame_gray[frame_gray > reflective_surface_thd] = 0
+
+    # for y in range(len(frame_gray)):
+    #     for x in range(len(frame_gray[0])):
+    #         if frame_gray[y][x] > reflective_surface_thd: # since marker white is not reflective surface, will not be very close to 255
+    #             frame_gray[y][x] = 0
 
 
     hsvmask=None
@@ -662,9 +677,9 @@ for i in range(0, len(img_path_list)):
                     centery = cY-y+m
 
                     imgg = frame_gray[max(0, y-m): min(y+h+2*m, frame_gray.shape[0]), max(0, x-m):min(x+w+2*m, frame_gray.shape[1])]
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_gray.jpg'), imgg)
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_gray.jpg'), imgg)
                     imgg_color = img2[max(0, y-m): min(y+h+2*m, frame_gray.shape[0]), max(0, x-m):min(x+w+2*m, frame_gray.shape[1])]           
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_color.jpg'), imgg_color)
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_color.jpg'), imgg_color)
 
                     imgg_fs = imgg_color.copy()
                     squares_contours = find_squares(imgg_fs)
@@ -692,7 +707,7 @@ for i in range(0, len(img_path_list)):
                     #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_gftt.jpg'), imgg_gftt)  
 
                     edges = cv2.Canny(imgg,100,200, 7)
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_canny.jpg'), edges)  
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_canny.jpg'), edges)  
 
                     # Harris corner detector
                     img_harris = imgg_color.copy()
@@ -814,13 +829,50 @@ for i in range(0, len(img_path_list)):
 
                     img_lsd_convexhull = imgg_color.copy()
                     #print("np.asarray(convexhullpointlist)", np.asarray(convexhullpointlist))
-                    # if len(convexhullpointlist)>0:
-                    #     hull = cv2.convexHull(np.asarray(convexhullpointlist))
-                    #     for pt in hull:
-                    #         cv2.circle(img_lsd_merge_intersect, (int(pt[0]), int(pt[1])), 5, (0,255,0), 2)
-                    #     cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_convexhull.jpg'), img_lsd_convexhull)  
+                    if len(convexhullpointlist)>0:
+                        hull = cv2.convexHull(np.asarray(convexhullpointlist, dtype=np.float32))
+                        print("len(hull)", len(hull))
+                        for pt in hull:
+                            #print("pt: ", pt)
+                            cv2.circle(img_lsd_convexhull, (int(pt[0][0]), int(pt[0][1])), 5, (0,255,0), 2)
+                        cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_lsd_mzconvexhull.jpg'), img_lsd_convexhull)  
                     
                     
+                    if IsUsingRefinedCorner and len(hull) > 0:
+                        hull_in_globalcoord=[]
+                        for pt in hull:
+                            hull_in_globalcoord.append([[int(pt[0][0]+x-m), int(pt[0][1]+y-m)]])
+
+                        approx_new=[]
+                        
+
+                        for pt in approx:
+                            min_dist=9999
+                            min_dist_index=0
+                            idxx=0
+
+                            for pt2 in hull_in_globalcoord:
+                                dist = np.linalg.norm(pt[0]-pt2[0])
+                                #dist = math.sqrt(math.pow((pt[0][0]-pt2[0][0]-x+m),2)+math.pow((pt[0][1]-pt2[0][1]-y+m),2))
+                                #print("dist: ", dist)
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    min_dist_index = idxx
+                                idxx=idxx+1
+
+                            #print("min_dist: ", min_dist)
+                            if min_dist < RefinedCornerThreshold[i]:
+                                print("original pt ", pt, "is refined by ", hull_in_globalcoord[min_dist_index], " with dist=", min_dist)
+                                approx_new.append(hull_in_globalcoord[min_dist_index])
+                            else:
+                                print("No replacement, min dist=", min_dist)
+                                approx_new.append(pt)
+                        
+                        print("old approx: ", approx.flatten())
+                        print("new approx: ", np.asarray(approx_new).flatten())
+                        approx = np.asarray(approx_new)
+
+
                     houghpic = imgg_color.copy()
                     houghparallelpic = imgg_color.copy()
                     lines=None
@@ -871,7 +923,7 @@ for i in range(0, len(img_path_list)):
                         colorrr = colors[int(cnttt_id) % len(colors)]
                         cv2.drawContours(imgcon, contours, -1, colorrr, 1)
                         cnttt_id=cnttt_id+1
-                    cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_contour.jpg'), imgcon)   
+                    #cv2.imwrite(os.path.join(output_dir, 'i=' + str(i) + '_idx_' + str(obj_id) + '_ctr_' + str(cX) + '_' + str(cY) + '_contour.jpg'), imgcon)   
 
 
 
@@ -1089,8 +1141,8 @@ for matches in matched_indices:
 print("delta_idx: ", delta_idx)
 #print("final_dst_pts: ", final_dst_pts)
 
-print("final_src_pts: ", final_src_pts*scaledownratio[0])
-print("final_dst_pts: ", final_dst_pts*scaledownratio[1])
+#print("final_src_pts: ", final_src_pts*scaledownratio[0])
+#print("final_dst_pts: ", final_dst_pts*scaledownratio[1])
 
 
 print("Input from src_dst_test_points.yml...")
