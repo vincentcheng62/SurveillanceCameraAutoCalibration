@@ -1,0 +1,10 @@
+%YAML:1.0
+---
+
+logging_file_name: 'messages.log'
+max_log_file_size_in_mb: 200.0
+logging_format: 'w'
+is_time_log: 'True'
+is_print_to_console: 'True'
+is_debug: 'True'
+

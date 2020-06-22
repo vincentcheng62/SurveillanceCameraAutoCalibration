@@ -1,0 +1,1 @@
+gdal_translate -of JPEG -scale -co worldfile=yes xian3cm.tif xian3cm.jpg

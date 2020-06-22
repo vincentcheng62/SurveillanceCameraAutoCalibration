@@ -1,0 +1,14 @@
+%YAML:1.0
+---
+
+match_config_file_path: "match_config.yml"
+log_config_file_path: "log_config.yml"
+
+# keep empty string if no camera id is concerned.
+camera_id: ""
+
+
+
+
+
+

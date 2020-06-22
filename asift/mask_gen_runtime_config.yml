@@ -1,0 +1,11 @@
+%YAML:1.0
+---
+
+mask_gen_config_file_path: "mask_config.yml"
+log_config_file_path: "log_config.yml"
+
+
+
+
+
+

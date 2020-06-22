@@ -1,0 +1,17 @@
+%YAML:1.0
+---
+
+depth_map_path: "dem_sci_park_circle.tif"
+#scale x = (0, 1]
+scale_x: 0.1
+#scale y = (0, 1]
+scale_y: 0.1
+#number of plane candidate (0, 200]
+number_of_plane_candidate: 100
+#point plane distance threshold (0, 0.3]
+pt_plane_dist_thres_in_m: 0.2
+#the scores of extracted plane needs to be >= min_scores_ratio*total_number_of_effective_pixels
+min_scores_ratio: 0.5
+
+
+

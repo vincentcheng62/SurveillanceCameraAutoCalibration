@@ -1,0 +1,42 @@
+%YAML:1.0
+---
+
+#image/geotiff path
+perspective_img_path: "xian_real2.png"
+orthophoto_img_path: "xian3cmtrue.jpg"
+geotiff_path: "xian3cmtrue.tif"
+
+#perspective/othophoto mask path
+perspective_mask_path: ""
+orthophoto_mask_path: ""
+
+orthophoto_img_scale: 1.0
+#set if require distortion correction
+is_need_distortion_corr: "false"
+#set if require marker as assistance
+is_need_marker: "false"
+marker_config_file: "marker_config.yml"
+marker_pt_to_ASIFT_pt_ratio: 1
+
+#add points pair by matching manually (usually far point pair)
+additional_points_pair_file: "src_dst_points_xian3cmtrue.yml"
+
+#maximum threads to be used in matching
+max_threads_used: 4
+#ratio for filtering false matching
+SIFT_ratio: 0.65
+#number of random sample for finding the best homography matrix
+RANSAC_iteration_num: 200000
+#reprojection threshold for finding the best homography matrix (in meter)
+RANSAC_phy_reprojection_thres_in_m: 1
+#maximum rms error threshold of matching (in meter)
+max_rms_err_thres_in_m: 1
+
+#camera parameters if distortion correction is required
+intrinsic_and_distortion_coeff_path: "intrinsic_and_distortion_coeff.yml"
+
+
+
+
+
+

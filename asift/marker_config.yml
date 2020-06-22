@@ -1,0 +1,83 @@
+%YAML:1.0
+---
+# in meter
+MarkerSize_in_m: 1.5 
+
+# scale = (0, 1]
+scaledownratio_orthophoto: 1.0
+scaledownratio_perspective: 1.0
+
+# line merging
+lines_merging_min_length_in_px: 5.0
+lines_merging_angle_diff_in_degree: 5.0
+lines_merging_extension_ratio: 2.0
+lines_merging_maxgap_in_px: 50.0
+
+# to judge whether 2 lines are the same after line merging 
+sameline_thd_in_px: 2.0 
+
+scalethd_for_intersected_lsd: 0.8
+
+
+# Parameter that are different beteween perspective img and orthophoto img
+# 2 are different since in general ortho geotiff photos are brighter
+thrhd_grayvalue_high_for_whitepart_per: 175
+thrhd_grayvalue_high_for_whitepart_ortho: 220
+
+thrhd_grayvalue_low_for_darkpart_per: 50
+thrhd_grayvalue_low_for_darkpart_ortho: 70
+
+reflective_surface_thd: 240
+
+RefinedCornerThreshold_per: 18
+RefinedCornerThreshold_ortho: 20
+
+boundingrectmargin_in_px_per: 10
+boundingrectmargin_in_px_ortho: 20
+
+mergedlineminthreshold_in_px_per: 12
+mergedlineminthreshold_in_px_ortho: 45
+
+morph_open_kernel_radius_in_px: 5
+morph_close_kernel_radius_in_px: 10
+dilate_kernel_size_in_px_for_cb_mask_radius: 6
+dilate_kernel_size_for_white: 6
+
+IsFindDarkAlsoNearSegmentedWhite: 'False'
+IsFindWhiteOnlyNearColorSeg: 'False'
+IsUsingRefinedCorner: 'True'
+IsHSVspecificTuning: 'True'
+
+# Rejection criteria for contour candidate
+length_approx_threshold_low: 2
+length_approx_threshold_high: 7
+marker_area_variation: 0.22  
+
+# 20%, for square it should be (+-0.25)
+area_to_perimeter_ratio_threshold: 0.12 
+approxPolyDP_epsilon: 20
+area_lower_threshold_in_px: 1000
+area_upper_threshold_in_px: 15000
+
+ # to judge survelliance camera view parallelogram marker (w/h > 2.0)
+aspect_ratio_thd: 2.0
+approxPolyDP_arclength_ratio: 0.05
+
+
+
+#Define common color HSV lower and upper
+S_lower: 100
+S_Upper: 255
+V_lower: 100
+V_Upper: 255
+H_lower: -15
+H_Upper: 15
+
+# major color HSV H value
+redhsv: 0
+red2hsv: 180
+yellowhsv: 42
+greenhsv: 80
+tealhsv: 105
+bluehsv: 120
+purplehsv: 130
