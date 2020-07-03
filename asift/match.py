@@ -600,7 +600,39 @@ def init_feature(name):
         matcher = cv.BFMatcher(norm)
     return detector, matcher
 
-def explore_match(img1, img2, kp_pairs, pp1, pp2, H = None, logger = None):
+
+# def check_inside(roi, pt):
+#     if pt[0] >= 0 and pt[0] < roi[1] and pt[1] >= 0 and pt[1] < roi[0]:
+#         return True
+#     else: 
+#         return False
+
+# def mid(pt1, pt2):
+#     return (int((pt1[0]+pt2[0])/2), int((pt1[1]+pt2[1])/2))
+
+# def Drawline_maybe_outofboundary(img, pt1, pt2, color, thickness):
+#     check_pt1 = check_inside(img.shape, pt1)
+#     check_pt2 = check_inside(img.shape, pt2)
+
+#     if check_pt1 and check_pt2:
+#         cv.line(img, pt1, pt2, color, thickness)
+
+#     elif check_pt1 and not check_pt2:
+#         mid_pt = mid(pt1, pt2)
+#         while not check_inside(img.shape, mid_pt):
+#             mid_pt = mid(pt1, mid_pt)
+#         cv.line(img, pt1, mid_pt, color, thickness)
+    
+#     elif not check_pt1 and check_pt2:
+#         mid_pt = mid(pt1, pt2)
+#         while not check_inside(img.shape, mid_pt):
+#             mid_pt = mid(mid_pt, pt2)
+#         cv.line(img, mid_pt, pt2, color, thickness)
+    
+
+
+def explore_match(img1, img2, kp_pairs, isOnlyKeyPt, pp1, pp2, H = None, logger = None, 
+                output_dir = None, IsDumpPtPair = False, Num_of_additional_point_pair = 0, pp1_gps = None):
 
     """
     function to select feature detector and matcher
@@ -631,47 +663,82 @@ def explore_match(img1, img2, kp_pairs, pp1, pp2, H = None, logger = None):
     vis[:h1, :w1] = img1
     vis[:h2, w1:w1+w2] = img2
     vis = cv.cvtColor(vis, cv.COLOR_GRAY2BGR)
+    vis_copy = vis.copy()
 
-    # draw 4 color lines in the boundingbox of perspective image
-    cv2.line(vis, (w1, 0), (w1+w2, 0), (255, 0, 0), 15)
-    cv2.line(vis, (w1+w2, 0), (w1+w2, h2), (0, 255, 0), 15)
+    # draw the lines in the boundingbox of perspective image
+    #cv2.line(vis, (w1, 0), (w1+w2, 0), (255, 0, 0), 15)
+    cv2.line(vis, (w1+w2, 0), (w1+w2, h2), (255, 0, 0), 15)
     cv2.line(vis, (w1+w2, h2), (w1, h2), (0, 0, 255), 10)
-    cv2.line(vis, (w1, h2), (w1, 0), (0, 255, 255), 10)
+    cv2.line(vis, (w1, h2), (w1, 0), (255, 0, 0), 10)
+    #cv.circle(vis ,(int(w1+w2*0.5), int(h2*0.5)), 13, (255, 0, 0), 3)
 
-    # try to draw the 4 corners of perspective image into orthomoasic geotiff
+    # draw a red, blue and green cross the represent 3 points (from center to somewhere between center to Top mid pt) for visual verification
+    cv2.line(vis, (int(w1+w2*0.5)-10, int(h2*0.5)-10), (int(w1+w2*0.5)+10, int(h2*0.5)+10), (0, 0, 255), 3)
+    cv2.line(vis, (int(w1+w2*0.5)+10, int(h2*0.5)-10), (int(w1+w2*0.5)-10, int(h2*0.5)+10), (0, 0, 255), 3)
+
+    cv2.line(vis, (int(w1+w2*0.5)-10, int(h2*0.25)-10), (int(w1+w2*0.5)+10, int(h2*0.25)+10), (255, 0, 0), 3)
+    cv2.line(vis, (int(w1+w2*0.5)+10, int(h2*0.25)-10), (int(w1+w2*0.5)-10, int(h2*0.25)+10), (255, 0, 0), 3)
+
+    cv2.line(vis, (int(w1+w2*0.5)-10, int(h2*0.125)-10), (int(w1+w2*0.5)+10, int(h2*0.125)+10), (0, 255, 0), 3)
+    cv2.line(vis, (int(w1+w2*0.5)+10, int(h2*0.125)-10), (int(w1+w2*0.5)-10, int(h2*0.125)+10), (0, 255, 0), 3)
+
+    # try to draw the range of view of perspective image into orthomoasic geotiff
+    ratiostep = 0.025
     if H is not None:
-        corners = np.float32([[0, 0], [w2, 0], [w2, h2], [0, h2]])
+        corners = np.float32([[w2, h2], [0, h2]])
+        base = ratiostep
+        while base < 1:
+            corners = np.append(corners, np.float32([[w2, h2*base], [0, h2*base]]), axis=0)
+            base = base + ratiostep
+
         corners = cv.perspectiveTransform(corners.reshape(1, -1, 2), H).reshape(-1, 2) + (0, 0)
+
+        center = np.float32([[w2*0.5, h2*0.5], [w2*0.5, h2*0.25], [w2*0.5, h2*0.125]])
+        center = cv.perspectiveTransform(center.reshape(1, -1, 2), H).reshape(-1, 2) + (0, 0)
+
+        # Draw the bottom line as red
+        cv.line(vis, (int(corners[0][0]), int(corners[0][1])), (int(corners[1][0]), int(corners[1][1])), (0, 0, 255), 5)
+
+        # draw a red, blue and green cross the represent 3 points (from center to somewhere between center to Top mid pt) for visual verification
+        cv2.line(vis, (int(center[0][0])-10, int(center[0][1])-10), (int(center[0][0])+10, int(center[0][1])+10), (0, 0, 255), 5)
+        cv2.line(vis, (int(center[0][0])+10, int(center[0][1])-10), (int(center[0][0])-10, int(center[0][1])+10), (0, 0, 255), 5)        
+
+        cv2.line(vis, (int(center[1][0])-10, int(center[1][1])-10), (int(center[1][0])+10, int(center[1][1])+10), (255, 0, 0), 5)
+        cv2.line(vis, (int(center[1][0])+10, int(center[1][1])-10), (int(center[1][0])-10, int(center[1][1])+10), (255, 0, 0), 5) 
+
+        cv2.line(vis, (int(center[2][0])-10, int(center[2][1])-10), (int(center[2][0])+10, int(center[2][1])+10), (0, 255, 0), 5)
+        cv2.line(vis, (int(center[2][0])+10, int(center[2][1])-10), (int(center[2][0])-10, int(center[2][1])+10), (0, 255, 0), 5) 
 
         # scale back the corners to real size of orthomosaic geotiff
         count=0
         for pt in corners:
             # pt[0] = int(pt[0]/scale_x)
-            # pt[1] = int(pt[1]/scale_y)
+            # pt[1] = int(pt[1]/scale_y)ssssssssssssssssssssssssssssssss
             cv.circle(vis ,(int(pt[0]), int(pt[1])), 13, (255, 0, 0), 3)
 
-            text=""
-            if count == 0:
-                text = "TL"
-                cv2.line(vis, (int(corners[0][0]), int(corners[0][1])), (int(corners[1][0]), int(corners[1][1])), (255, 0, 0), 5)
-            elif count == 1:
-                text = "TR"
-                cv2.line(vis, (int(corners[1][0]), int(corners[1][1])), (int(corners[2][0]), int(corners[2][1])), (0, 255, 0), 5)
-            elif count == 2:
-                text = "LR"
-                cv2.line(vis, (int(corners[2][0]), int(corners[2][1])), (int(corners[3][0]), int(corners[3][1])), (0, 0, 255), 5)
-            else:
-                text = "LL"
-                cv2.line(vis, (int(corners[3][0]), int(corners[3][1])), (int(corners[0][0]), int(corners[0][1])), (0, 255, 255), 5)
+            # if not logger is None:
+            #     logger.info('Reprojected %s corner px is: %s, %s', text, str(pt[0]), str(pt[1]))
 
-            if not logger is None:
-                logger.info('Reprojected %s corner px is: %s, %s', text, str(pt[0]), str(pt[1]))
-
-            cv2.putText(vis, text, (int(pt[0])+20, int(pt[1])), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 3)
+            #cv2.putText(vis, text, (int(pt[0])+20, int(pt[1])), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 3)
             count=count+1
 
         #corners = np.int32(corners)
         #cv.polylines(vis, [corners], True, (255, 0, 0), 3)
+
+    f = None
+    if IsDumpPtPair:
+        if not kp_pairs is None:
+            f = open(os.path.join(output_dir, "all_asift_pair.txt"), "a")
+            f.write("ortho_x ortho_y persp_x persp_y\n")
+            if not logger is None:
+                logger.info('Start to dump all asift matching pair pixel coordinate to a file...')
+        else:
+            f = open(os.path.join(output_dir, "final_pair.txt"), "a")
+            f.write("ortho_x ortho_y ortho_lat ortho_lon persp_x persp_y\n")
+            if not logger is None:
+                logger.info('Start to dump all final matching pair pixel coordinate to a file...')
+        
+        
 
     p1, p2 = [], [] 
     if not kp_pairs is None:
@@ -679,23 +746,38 @@ def explore_match(img1, img2, kp_pairs, pp1, pp2, H = None, logger = None):
         for kpp in kp_pairs:
             p1.append(np.int32(kpp[0].pt))
             p2.append(np.int32(np.array(kpp[1].pt) + [w1, 0]))
+
+            if IsDumpPtPair:
+                f.write(str(int(kpp[0].pt[0])) + ' ' + str(int(kpp[0].pt[1])) + ' ' + str(int(kpp[1].pt[0])) + ' ' + str(int(kpp[1].pt[1])) + "\n")
     
     else:
         status = np.ones(len(pp1), np.bool_)
         for ii in range(0, len(pp1)):
             p1.append(np.int32(pp1[ii]))
-            p2.append(np.int32(np.array(pp2[ii]) + [w1, 0]))        
+            p2.append(np.int32(np.array(pp2[ii]) + [w1, 0]))  
+
+            if IsDumpPtPair and not pp1_gps is None:
+                f.write(str(int(pp1[ii][0])) + ' ' + str(int(pp1[ii][1])) + ' ' + str(pp1_gps[ii][0]) + ' ' + str(pp1_gps[ii][1]) + ' ' + str(int(pp2[ii][0])) + ' ' + str(int(pp2[ii][1])) + "\n")          
+
+    if IsDumpPtPair:
+        f.close()      
 
     green = (0, 255, 0)
     red = (0, 0, 255)
     kp_color = (51, 103, 236)
+    circie_radius = 3
 
-    for (x1, y1), (x2, y2), inlier in zip(p1, p2, status):
+    for count, ((x1, y1), (x2, y2), inlier) in enumerate(zip(p1, p2, status)):
+
         if inlier:
-            col = green
-            cv.circle(vis, (x1, y1), 2, col, -1)
-            cv.circle(vis, (x2, y2), 2, col, -1)
-        else:
+            if count+Num_of_additional_point_pair >= len(status):
+                col = red
+            else:
+                col = green
+            cv.circle(vis, (x1, y1), circie_radius, col, -1)
+            cv.circle(vis, (x2, y2), circie_radius, col, -1)
+
+        elif not isOnlyKeyPt:
             col = red
             r = 2
             thickness = 3
@@ -704,9 +786,40 @@ def explore_match(img1, img2, kp_pairs, pp1, pp2, H = None, logger = None):
             cv.line(vis, (x2-r, y2-r), (x2+r, y2+r), col, thickness)
             cv.line(vis, (x2-r, y2+r), (x2+r, y2-r), col, thickness)
     
-    for (x1, y1), (x2, y2), inlier in zip(p1, p2, status):
-        if inlier:
-            cv.line(vis, (x1, y1), (x2, y2), green)
+    counter=0
+    ShowRegionSize=100
+    cross_length=8
+    if not isOnlyKeyPt:
+        for count, ((x1, y1), (x2, y2), inlier) in enumerate(zip(p1, p2, status)):
+            if inlier:
+                if count+Num_of_additional_point_pair >= len(status):
+                    col = red
+                else:
+                    col = green
+                cv.line(vis, (x1, y1), (x2, y2), col)
+
+                # Also saved the matched inliers small photo for debug purpose
+                if not output_dir is None and kp_pairs is None:
+                    if x1 > ShowRegionSize*0.5 and x1 < vis.shape[1] - ShowRegionSize*0.5 and \
+                        y1 > ShowRegionSize*0.5 and y1 < vis.shape[0] - ShowRegionSize*0.5 and \
+                        x2 > ShowRegionSize*0.5 and x2 < vis.shape[1] - ShowRegionSize*0.5 and \
+                        y2 > ShowRegionSize*0.5 and y2 < vis.shape[0] - ShowRegionSize*0.5:
+
+                        matched_features = np.zeros((ShowRegionSize, ShowRegionSize*2), np.uint8)
+                        matched_features = cv.cvtColor(matched_features, cv.COLOR_GRAY2BGR)
+                        matched_features[:ShowRegionSize, :ShowRegionSize] = vis_copy[y1-50:y1+50, x1-50:x1+50]
+                        matched_features[:ShowRegionSize, ShowRegionSize:ShowRegionSize*2] = vis_copy[y2-50:y2+50, x2-50:x2+50]
+
+                        # draw a red cross to represent the centre
+                        cv2.line(matched_features, (int(ShowRegionSize*0.5)-cross_length, int(ShowRegionSize*0.5)-cross_length), (int(ShowRegionSize*0.5)+cross_length, int(ShowRegionSize*0.5)+cross_length), (0, 0, 255), 1)
+                        cv2.line(matched_features, (int(ShowRegionSize*0.5)+cross_length, int(ShowRegionSize*0.5)-cross_length), (int(ShowRegionSize*0.5)-cross_length, int(ShowRegionSize*0.5)+cross_length), (0, 0, 255), 1)
+
+                        cv2.line(matched_features, (int(ShowRegionSize+ShowRegionSize*0.5)-cross_length, int(ShowRegionSize*0.5)-cross_length), (int(ShowRegionSize+ShowRegionSize*0.5)+cross_length, int(ShowRegionSize*0.5)+cross_length), (0, 0, 255), 1)
+                        cv2.line(matched_features, (int(ShowRegionSize+ShowRegionSize*0.5)+cross_length, int(ShowRegionSize*0.5)-cross_length), (int(ShowRegionSize+ShowRegionSize*0.5)-cross_length, int(ShowRegionSize*0.5)+cross_length), (0, 0, 255), 1)
+
+                        cv.imwrite(os.path.join(output_dir, "asift_inlier_pair_" + str(counter) + ".png"), matched_features)
+                        counter=counter+1
+
 
     return vis
 
@@ -1803,9 +1916,10 @@ def ComputeReprojectionErr2(pp1_gps, pp2, H_px_to_px, scale_x, scale_y, img1_col
 
     return rms_err
 
-def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols, img1_rows, scale_x, 
+def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, mask1, mask2, img1_cols, img1_rows, scale_x, 
     scale_y, min_x, min_y, max_x, max_y, marker_pt_to_ASIFT_pt_ratio, SIFT_ratio, RANSAC_iteration_num, 
-    is_need_marker, logger, is_debug, additional_points_pair_file, marker_config_file, img1_path, img2_path, orthomosaicscale):
+    is_need_marker, logger, is_debug, additional_points_pair_file, marker_config_file, img1_path, img2_path,
+    orthomosaicscale, is_time_log, output_dir):
     
     """
     function to match key points, estimate homography matrix and output matching image
@@ -1842,9 +1956,9 @@ def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols
         
 
     Returns:
-        H_px_to_gps (nparray): homography matrix that maps from pixel to pixel by double mapping (vincent's method)
+        H_px_to_gps (nparray): homography matrix that maps from pixel to gps by single mapping (ryan's method)
         rms_err_H_px_to_gps (double): rms error of H_px_to_gps
-        H_px_to_gps2 (nparray):  homography matrix that maps from pixel to gps by single mapping (ryan's method)
+        H_px_to_gps2 (nparray):  homography matrix that maps from pixel to pixel by double mapping (vincent's method)
         rms_err_H_px_to_gps2 (double): rms error of H_px_to_gps2
         H_px_to_px (nparray):  homography matrix that maps from pixel to pixel 
         rms_err_H_px_to_px (double): rms error of H_px_to_px
@@ -1855,33 +1969,55 @@ def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols
     
     """
     
-    logger.info('Start to compute knn matches of the keypoints....')
+    start = time.time()
+    logger.info('Start to compute knn matches of the keypoints (it takes some time)....')
     raw_matches = matcher.knnMatch(desc1, trainDescriptors = desc2, k = 2) #2
 
+    logger.info('compute knn matches of the keypoints - complete')
+    if (is_time_log): 
+        logger.info('compute knn matches of the keypoints took %f seconds.',time.time() - start)
+
+    start = time.time()
     logger.info('Filter matches by do SIFT ratio test...')
     p1, p2, kp_pairs = filter_matches(kp1, kp2, raw_matches, SIFT_ratio) 
-
+    logger.info('Filter matches by do SIFT ratio test - complete')
+    if (is_time_log): 
+        logger.info('Filter matches by do SIFT ratio test took %f seconds.',time.time() - start)
 
     marker_pt1 = None
     marker_pt2 = None
     if is_need_marker:
         # img1: ortho, img2, persepctive
+        start = time.time()
         marker_pt1, marker_pt2 = detect_markers(marker_config_file, logger, img1_path, img2_path, is_debug, orthomosaicscale)
+        logger.info('detect marker - complete')
+        if (is_time_log): 
+            logger.info('detect marker took %f seconds.',time.time() - start)
 
     gray1 = cv.cvtColor(resized_img1, cv.COLOR_BGR2GRAY)
-    gray2 = cv.cvtColor(resized_img2, cv.COLOR_BGR2GRAY)    
+    if not mask1 is None:
+        gray1_masked = cv.bitwise_and(gray1, mask1)
+        gray1 = cv2.addWeighted(gray1, 0.3, gray1_masked, 0.7, 0)
+    gray2 = cv.cvtColor(resized_img2, cv.COLOR_BGR2GRAY)
+    if not mask2 is None:
+        gray2_masked = cv.bitwise_and(gray2, mask2)
+        gray2 = cv2.addWeighted(gray2, 0.3, gray2_masked, 0.7, 0)
 
     logger.info('RANASC reprojection thd in px: %s', str(ransac_reprojection_threshold))
 
     number_of_asift_matches = len(p1)
     number_of_asift_inliers_matches = 0
     number_of_final_matches_pts = 0
+    number_additional_points_pair = 0
     logger.info('number of matches: %s', str(number_of_asift_matches))
 
     pp1 = None
     pp2 = None
 
     if number_of_asift_matches >= 4 or is_need_marker and not marker_pt1 is None and number_of_asift_matches + len(marker_pt1) > 4:
+
+        start = time.time()
+        logger.info('Start to compute homography using RANSAC (it takes some time)...')
 
         # 1. inliers of ASIFT
         if number_of_asift_matches > 0:
@@ -1904,25 +2040,7 @@ def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols
             number_of_asift_inliers_matches = str(len(pp1))
             logger.info('number of inliers of ASIFT matched points: %s', number_of_asift_inliers_matches)
 
-        # 2. Additional points pair by manual pairing
-        if not additional_points_pair_file == "":
-            fs_read = cv2.FileStorage(additional_points_pair_file, cv2.FILE_STORAGE_READ)
-            ortho_matrix = fs_read.getNode("ortho_matrix").mat()
-            perspective_matrix = fs_read.getNode("perspective_matrix").mat()
-            fs_read.release()
-
-            logger.info('%s additional manual points pair will be added to the final homography fitting', str(ortho_matrix.shape[0]))
-            for idx in range(0, ortho_matrix.shape[0]):
-                new_pp1 = np.array([[ortho_matrix[idx][1]*scale_x, ortho_matrix[idx][2]*scale_y]])
-                new_pp2 = np.array([[perspective_matrix[idx][1], perspective_matrix[idx][2]]])
-
-                pp1 = np.append(pp1, new_pp1, axis = 0)
-                pp2 = np.append(pp2, new_pp2, axis = 0)
-
-                logger.info('ortho %s %s, perspective %s %s', str(new_pp1[0][0]), str(new_pp1[0][1]), str(new_pp2[0][0]), str(new_pp2[0][1]))
-
-
-        # 3. Artificial marker detection point pairs
+        # 2. Artificial marker detection point pairs
         if is_need_marker:
             if marker_pt1 is None:
                 logger.info('Marker detection fail! Continue to use ASIFT point for RANSAC homography')
@@ -1953,6 +2071,24 @@ def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols
                 
                 logger.info('Total pts to fit: %s', str(len(pp1)))
 
+        # 3. Additional points pair by manual pairing
+        if not additional_points_pair_file == "":
+            fs_read = cv2.FileStorage(additional_points_pair_file, cv2.FILE_STORAGE_READ)
+            ortho_matrix = fs_read.getNode("ortho_matrix").mat()
+            perspective_matrix = fs_read.getNode("perspective_matrix").mat()
+            fs_read.release()
+
+            logger.info('%s additional manual points pair will be added to the final homography fitting', str(ortho_matrix.shape[0]))
+            for idx in range(0, ortho_matrix.shape[0]):
+                new_pp1 = np.array([[ortho_matrix[idx][1]*scale_x, ortho_matrix[idx][2]*scale_y]])
+                new_pp2 = np.array([[perspective_matrix[idx][1], perspective_matrix[idx][2]]])
+
+                pp1 = np.append(pp1, new_pp1, axis = 0)
+                pp2 = np.append(pp2, new_pp2, axis = 0)
+
+                logger.info('ortho %s %s, perspective %s %s', str(new_pp1[0][0]), str(new_pp1[0][1]), str(new_pp2[0][0]), str(new_pp2[0][1]))
+                number_additional_points_pair = number_additional_points_pair + 1
+
 
         #Sum of 1 and 2 and 3, convert final matching pts from px to gps
         number_of_final_matches_pts = len(pp1)
@@ -1976,14 +2112,28 @@ def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols
                                 [ 0, 0 ,1]])  
 
         H_px_to_gps2 = cvt_gps_mat.dot(scale_mat.dot(H_px_to_px))
-        match_img = explore_match(gray1, gray2, kp_pairs,  None, None, H_px_to_px, logger)
-        match_img_inliers = explore_match(gray1, gray2, kp_pairs_inliers, None, None, H_px_to_px, None)
-        match_img_final_matchpts = explore_match(gray1, gray2, None, pp1, pp2, H_px_to_px, None)
+
+        logger.info('Compute homography - complete')
+        if (is_time_log): 
+            logger.info('Compute homography took %f seconds.',time.time() - start)            
+
+        # The drawing part
+        start = time.time()
+        logger.info('Start to draw the results...')
+        keypt_img = explore_match(gray1, gray2, kp_pairs, True, None, None, H_px_to_px, logger, None, False, 0, None)
+        match_img = explore_match(gray1, gray2, kp_pairs, False, None, None, H_px_to_px, None, output_dir, True, 0, None)
+        match_img_inliers = explore_match(gray1, gray2, kp_pairs_inliers, False, None, None, H_px_to_px, None, None, False, 0, None)
+        match_img_final_matchpts = explore_match(gray1, gray2, None, False, pp1, pp2, H_px_to_px, None, output_dir, True, number_additional_points_pair, pp1_gps)
+        logger.info('Result drawing - complete')
+        if (is_time_log): 
+            logger.info('Result drawing took %f seconds.',time.time() - start)        
 
     else:
         H_px_to_gps, H_px_to_gps2, H_px_to_px, match_img, match_img_inliers = None, None, None, None
 
     #compute reprojection error
+    start = time.time()
+    logger.info('Start to compute reprojection error...')    
     if H_px_to_gps is not None:
         rms_err_H_px_to_gps = ComputeReprojectionErr1(pp1_gps, pp2, H_px_to_gps)
     else:
@@ -1995,7 +2145,11 @@ def match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1_cols
         rms_err_H_px_to_px = None
         rms_err_H_px_to_gps2 = None
 
-    return H_px_to_gps, rms_err_H_px_to_gps, H_px_to_gps2, rms_err_H_px_to_gps2, H_px_to_px, rms_err_H_px_to_px, match_img , match_img_inliers, match_img_final_matchpts, number_of_asift_matches, number_of_asift_inliers_matches, number_of_final_matches_pts
+    logger.info('Compute reprojection error - complete')
+    if (is_time_log): 
+        logger.info('Compute reprojection error took %f seconds.',time.time() - start) 
+
+    return H_px_to_gps, rms_err_H_px_to_gps, H_px_to_gps2, rms_err_H_px_to_gps2, H_px_to_px, rms_err_H_px_to_px, keypt_img, match_img , match_img_inliers, match_img_final_matchpts, number_of_asift_matches, number_of_asift_inliers_matches, number_of_final_matches_pts
 
 if __name__ == '__main__':
 
@@ -2282,6 +2436,9 @@ if __name__ == '__main__':
     if (is_time_log): 
         logger.info('set detector took %f seconds.',time.time() - start)
 
+    logger.info('Size of ortho before scaling: %s %s', str(img1.shape[1]), str(img1.shape[0]))
+    logger.info('Size of perspective before scaling: %s %s', str(img2.shape[1]), str(img2.shape[0]))
+
     #scale down image (any idea about this ad-hoc logic? any improvement can be made?)
     start = time.time()
     # if np.max([img1.shape[0], img1.shape[1]]) < 5000:
@@ -2301,6 +2458,9 @@ if __name__ == '__main__':
     resized_img1 = cv.resize(img1, (0, 0), None, scale_x, scale_y)
     resized_img2 = img2.copy()     
 
+    logger.info('Size of ortho after scaling: %s %s', str(resized_img1.shape[1]), str(resized_img1.shape[0]))
+    logger.info('Size of perspective after scaling: %s %s', str(resized_img2.shape[1]), str(resized_img2.shape[0]))    
+
     logger.info('scale down geotiff - complete')
     if (is_time_log): 
         logger.info('scale down geotiff took %f seconds.',time.time() - start)
@@ -2317,6 +2477,7 @@ if __name__ == '__main__':
         logger.info('scale down mask took %f seconds.',time.time() - start)
 
     #compute ransac_reprojection_threshold 
+    logger.info('Parse the .tif by using gdalinfo to get the 4 corners gps information...')
     start = time.time()
     width = ds.RasterXSize
     height = ds.RasterYSize
@@ -2330,21 +2491,22 @@ if __name__ == '__main__':
     maxy = gt[0] + width*gt[1] + height*gt[2]
     maxx = gt[3] 
 
-    logger.info('minx: %s', str(minx))
-    logger.info('miny: %s', str(miny))
-    logger.info('maxx: %s', str(maxx))
-    logger.info('maxy: %s', str(maxy))
+    logger.info('minx in geotiff(gdalinfo): %s', str(minx))
+    logger.info('miny in geotiff(gdalinfo): %s', str(miny))
+    logger.info('maxx in geotiff(gdalinfo): %s', str(maxx))
+    logger.info('maxy in geotiff(gdalinfo): %s', str(maxy))
 
     pt1 = ConvertPx2GPS(1.0, 1.0, scale_x, scale_y, img1.shape[1], img1.shape[0], minx, miny, maxx, maxy)
     pt2 = ConvertPx2GPS(2.0, 1.0, scale_x, scale_y, img1.shape[1], img1.shape[0], minx, miny, maxx, maxy)
 
-    logger.info('pt1: %s %s', str(pt1[0][0]), str(pt1[0][1]))
-    logger.info('pt2: %s %s', str(pt2[0][0]), str(pt2[0][1]))
+    logger.info('Use 2 adjacent pixel points to estimate the scale ratio between pixel to physical distance...')
+    logger.info('pt1: px(1, 1): %s %s', str(pt1[0][0]), str(pt1[0][1]))
+    logger.info('pt2: px(2, 1): %s %s', str(pt2[0][0]), str(pt2[0][1]))
 
     temp = pyproj.Geod(ellps='WGS84')   
     _,_,d1 = temp.inv(pt1[0][1],pt1[0][0],pt2[0][1],pt2[0][0]) 
 
-    logger.info('d1: %s', str(d1))
+    logger.info('physical distance of pt1 and pt2 under the geotiff (in m): %s', str(d1))
 
     if math.isnan(d1):
         logger.info('orthomosaicscale re-estimated is nan!! to try parse content in gdalinfo directly to try to get lat lon')
@@ -2359,19 +2521,19 @@ if __name__ == '__main__':
             math.fabs(CornerLats[0]-CornerLats[2])>1e-5 or math.fabs(CornerLats[1]-CornerLats[3])>1e-5):
             logger.info('Check if the geotiff is aligned to true north!!! Discover gps difference in data at same axis!')
 
-        logger.info('new minx: %s', str(minx))
-        logger.info('new miny: %s', str(miny))
-        logger.info('new maxx: %s', str(maxx))
-        logger.info('new maxy: %s', str(maxy))
+        logger.info('new minx in geotiff(gdalinfo): %s', str(minx))
+        logger.info('new miny in geotiff(gdalinfo): %s', str(miny))
+        logger.info('new maxx in geotiff(gdalinfo): %s', str(maxx))
+        logger.info('new maxy in geotiff(gdalinfo): %s', str(maxy))
 
         pt1 = ConvertPx2GPS(1.0, 1.0, scale_x, scale_y, img1.shape[1], img1.shape[0], minx, miny, maxx, maxy)
         pt2 = ConvertPx2GPS(2.0, 1.0, scale_x, scale_y, img1.shape[1], img1.shape[0], minx, miny, maxx, maxy)
 
-        logger.info('new pt1: %s %s', str(pt1[0][0]), str(pt1[0][1]))
-        logger.info('new pt2: %s %s', str(pt2[0][0]), str(pt2[0][1]))
+        logger.info('new pt1: px(1, 1): %s %s', str(pt1[0][0]), str(pt1[0][1]))
+        logger.info('new pt2: px(2, 1): %s %s', str(pt2[0][0]), str(pt2[0][1]))
     
         _,_,d1 = temp.inv(pt1[0][1],pt1[0][0],pt2[0][1],pt2[0][0]) 
-        logger.info('new d1: %s', str(d1))
+        logger.info('physical distance of pt1 and pt2 under the geotiff (in m): %s', str(d1))
 
 
     if math.isnan(d1):
@@ -2410,19 +2572,21 @@ if __name__ == '__main__':
     # logger.info("scale_y: %f", scale_y)
     logger.info("orthophoto_img_scale: %f", orthophoto_img_scale)
     logger.info("SIFT_ratio: %f", SIFT_ratio)
-    logger.info("RANSAC_iteration_num: %f", RANSAC_iteration_num)
-    logger.info("ransac_reprojection_threshold_in_m: %f", ransac_reprojection_threshold)
+    logger.info("RANSAC_iteration_num: %d", RANSAC_iteration_num)
+    logger.info("RANSAC_phy_reproject_thres: %f", RANSAC_phy_reproject_thres)
+    logger.info("ransac_reprojection_threshold_in_px: %f", ransac_reprojection_threshold)
     logger.info("max_rms_err_thres_in_m: %f", max_rms_err_thres_in_m)
-    logger.info("number of parallel threads: %f", num_of_cpu)
-    logger.info("feature_name: %s", feature_name)
+    logger.info("number of parallel threads: %d", num_of_cpu)
+    logger.info("ASIFT feature_name: %s", feature_name)
     logger.info("[========END SUMMARY OF MATCH CONFIG========]")
 
     #compute matching
     start = time.time()
 
-    logger.info('Start affine detect of orthomosaic image...')
+    logger.info('Start affine detect of orthomosaic image (it takes some time)...')
+    logger.info('(Use htop to monitor the usage of RAM, if the process got killed, use less number of parallel threads)')
     kp1, desc1 = affine_detect(detector, resized_img1, resized_mask1, pool=ThreadPool(processes = num_of_cpu))
-    logger.info('Start affine detect of perspective image...')
+    logger.info('Start affine detect of perspective image (it takes some time)...')
     kp2, desc2 = affine_detect(detector, resized_img2, mask2, pool=ThreadPool(processes = num_of_cpu))
 
     # # Initiate SIFT detector
@@ -2432,30 +2596,35 @@ if __name__ == '__main__':
     # kp1, desc1 = sift.detectAndCompute(resized_img1,mask1)
     # kp2, desc2 = sift.detectAndCompute(resized_img2,mask2)
 
-    logger.info('img1 - %d features, img2 - %d features', len(kp1), len(kp2))
+    logger.info('ASIFT: ortho - %d features, perspective - %d features', len(kp1), len(kp2))
     logger.info('compute key points - complete')
     if (is_time_log): 
         logger.info('compute key points took %f seconds.',time.time() - start)
 
     #After obtaining result of asift matching, do some preprocessing (e.g. marker/additional point pairs) and compute homography matrix
-    start = time.time()
-    H_px_to_gps, rms_err_H_px_to_gps, H_px_to_gps2, rms_err_H_px_to_gps2, H_px_to_px, rms_err_H_px_to_px, match_img , match_img_inliers, match_img_final_matchpts, number_of_asift_matches, number_of_asift_inliers_matches, number_of_final_matches_pts = match_and_draw(desc1, desc2, kp1, kp2, resized_img1, resized_img2, img1.shape[1], img1.shape[0], 
-        scale_x, scale_y, minx, miny, maxx, maxy, marker_pt_to_ASIFT_pt_ratio, SIFT_ratio, RANSAC_iteration_num, IsNeedMarkerDetection, logger, is_debug, additional_points_pair_file, marker_config_file, orthophoto_img_path, perspective_img_path, d1*scale_x)
+    H_px_to_gps, rms_err_H_px_to_gps, H_px_to_gps2, rms_err_H_px_to_gps2, H_px_to_px, rms_err_H_px_to_px, \
+        keypt_img, match_img , match_img_inliers, match_img_final_matchpts, number_of_asift_matches, \
+        number_of_asift_inliers_matches, number_of_final_matches_pts = match_and_draw(desc1, desc2, kp1, kp2, \
+        resized_img1, resized_img2, resized_mask1, mask2, img1.shape[1], img1.shape[0], scale_x, scale_y, minx, miny, maxx, maxy, \
+        marker_pt_to_ASIFT_pt_ratio, SIFT_ratio, RANSAC_iteration_num, IsNeedMarkerDetection, logger, is_debug, \
+            additional_points_pair_file, marker_config_file, orthophoto_img_path, perspective_img_path, d1*scale_x, is_time_log, output_dir)
 
     #check if estimation of homography matrix is successful
     if H_px_to_gps is None or H_px_to_gps2 is None:
         logger.error("cannot estimate homography matrix due to insufficient key point pairs")
         exit(1)
 
-    logger.info('rms error of H_px_to_gps: %f m', rms_err_H_px_to_gps)
-    logger.info('rms error of H_px_to_gps2: %f m', rms_err_H_px_to_gps2)
+    logger.info('rms error of H_px_to_gps(direct mapping): %f m', rms_err_H_px_to_gps)
+    logger.info('rms error of H_px_to_gps2(double mapping): %f m', rms_err_H_px_to_gps2)
 
-    logger.info('compute homography matrix - complete')
-    if (is_time_log): 
-        logger.info('compute homography matrix took %f seconds.',time.time() - start)
 
     #save result
     start = time.time()
+
+    # Save as .png is more clear than .jpg
+    if keypt_img is not None and is_debug:
+        cv.imwrite(os.path.join(output_dir, "ASIFT_matching_all_pairs_only_keypoints.png"), keypt_img)
+
     if match_img is not None and is_debug:
         cv.imwrite(os.path.join(output_dir, "ASIFT_matching_all_pairs_(" + str(number_of_asift_matches) + ").png"), match_img)
 
@@ -2466,7 +2635,7 @@ if __name__ == '__main__':
         cv.imwrite(os.path.join(output_dir, "Matching_final_pairs_(" + str(number_of_final_matches_pts) + ").png"), match_img_final_matchpts)    
 
     if (rms_err_H_px_to_gps > max_rms_err_thres_in_m or rms_err_H_px_to_gps2 > max_rms_err_thres_in_m):
-        logger.error("fail to map pixel to gps due to large rms error")
+        logger.error("fail to map pixel to gps due to large rms error, no homography file is produced, please change config setting and re-calibrate again!")
         exit(1)
 
     if (is_debug):
@@ -2499,15 +2668,41 @@ if __name__ == '__main__':
     logger.info('Homography file is outout at: %s', os.path.join(output_dir, final_homography_output_file_name))
     result_file = cv.FileStorage(os.path.join(output_dir, final_homography_output_file_name), cv.FILE_STORAGE_WRITE)
     if rms_err_H_px_to_gps < rms_err_H_px_to_gps2:
-        result_file.write("homography_matrix", H_px_to_gps)    
+        result_file.write("homography_matrix", H_px_to_gps)   
+        logger.info('rms_err_H_px_to_gps < rms_err_H_px_to_gps2, use the result of direct mapping') 
     else:
         result_file.write("homography_matrix", H_px_to_gps2)    
+        logger.info('rms_err_H_px_to_gps >= rms_err_H_px_to_gps2, use the result of double mapping') 
 
     result_file.write("number_of_asift_matches", str(number_of_asift_matches))
     result_file.write("number_of_asift_inliers_matches", str(number_of_asift_inliers_matches))
     result_file.write("number_of_final_matches_pts", str(number_of_final_matches_pts))
-    result_file.write("rms error of H_px_to_gps", str(rms_err_H_px_to_gps))
-    result_file.write("rms error of H_px_to_gps2", str(rms_err_H_px_to_gps2))
+    result_file.write("rms error of H_px_to_gps - direct mapping", str(rms_err_H_px_to_gps))
+    result_file.write("rms error of H_px_to_gps2 - double mapping", str(rms_err_H_px_to_gps2))
+    result_file.write("total feature in ortho img", str(len(kp1)))
+    result_file.write("total feature in perspective img", str(len(kp2)))
+    result_file.write("orthophoto_img_path", str(orthophoto_img_path))
+    result_file.write("perspective_img_path", str(perspective_img_path))
+    result_file.write("orthophoto_mask_path", str(orthophoto_mask_path))
+    result_file.write("perspective_mask_path", str(perspective_mask_path))
+    result_file.write("geotiff_path", str(geotiff_path))
+    result_file.write("orthophoto_img_scale", str(orthophoto_img_scale))
+    result_file.write("RANSAC_iteration_num", str(RANSAC_iteration_num))
+    result_file.write("SIFT_ratio", str(SIFT_ratio))
+    result_file.write("RANSAC_phy_reproject_thres_in_m", str(RANSAC_phy_reproject_thres))
+    result_file.write("ransac_reprojection_threshold_in_px", str(ransac_reprojection_threshold))
+    result_file.write("max_rms_err_thres_in_m", str(max_rms_err_thres_in_m))
+    result_file.write("additional_points_pair_file", str(additional_points_pair_file))
+
+    if not additional_points_pair_file == "":
+        fs_read = cv2.FileStorage(additional_points_pair_file, cv2.FILE_STORAGE_READ)
+        ortho_matrix = fs_read.getNode("ortho_matrix").mat()
+        perspective_matrix = fs_read.getNode("perspective_matrix").mat()
+        fs_read.release()
+
+        result_file.write("additional_points_pair_ortho_matrix", ortho_matrix)        
+        result_file.write("additional_points_pair_perspective_matrix", perspective_matrix)      
+
     result_file.release()
 
     logger.info('save result - complete')
