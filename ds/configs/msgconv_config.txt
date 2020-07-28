@@ -1,0 +1,426 @@
+# Copyright (c) 2018 NVIDIA Corporation.  All rights reserved.
+#
+# NVIDIA Corporation and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA Corporation is strictly prohibited.
+
+[sensor0]
+enable=1
+id=1
+
+[sensor1]
+enable=1
+type=Camera
+id=2
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor2]
+enable=1
+type=Camera
+id=3
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor3]
+enable=1
+type=Camera
+id=4
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor4]
+enable=1
+type=Camera
+id=5
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor5]
+enable=1
+type=Camera
+id=6
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor6]
+enable=1
+type=Camera
+id=7
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor7]
+enable=1
+type=Camera
+id=8
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor8]
+enable=1
+type=Camera
+id=9
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor9]
+enable=1
+type=Camera
+id=10
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor10]
+enable=1
+type=Camera
+id=11
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor11]
+enable=1
+type=Camera
+id=12
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+
+[sensor12]
+enable=1
+type=Camera
+id=13
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+
+[sensor13]
+enable=1
+type=Camera
+id=14
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+
+[sensor14]
+enable=1
+type=Camera
+id=15
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor15]
+enable=1
+type=Camera
+id=16
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor16]
+enable=1
+type=Camera
+id=17
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor17]
+enable=1
+type=Camera
+id=18
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor18]
+enable=1
+type=Camera
+id=19
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor19]
+enable=1
+type=Camera
+id=20
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor20]
+enable=1
+type=Camera
+id=21
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor21]
+enable=1
+type=Camera
+id=22
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor22]
+enable=1
+type=Camera
+id=23
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor23]
+enable=1
+type=Camera
+id=24
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor24]
+enable=1
+type=Camera
+id=25
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor25]
+enable=1
+type=Camera
+id=26
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor26]
+enable=1
+type=Camera
+id=27
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor27]
+enable=1
+type=Camera
+id=28
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor28]
+enable=1
+type=Camera
+id=29
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor29]
+enable=1
+type=Camera
+id=30
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor30]
+enable=1
+type=Camera
+id=31
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor31]
+enable=1
+type=Camera
+id=32
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor32]
+enable=1
+type=Camera
+id=33
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor33]
+enable=1
+type=Camera
+id=34
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor34]
+enable=1
+type=Camera
+id=35
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor35]
+enable=1
+type=Camera
+id=36
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor36]
+enable=1
+type=Camera
+id=37
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor37]
+enable=1
+type=Camera
+id=38
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor38]
+enable=1
+type=Camera
+id=39
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor39]
+enable=1
+type=Camera
+id=40
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor40]
+enable=1
+type=Camera
+id=41
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor41]
+enable=1
+type=Camera
+id=42
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor42]
+enable=1
+type=Camera
+id=43
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor43]
+enable=1
+type=Camera
+id=44
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor44]
+enable=1
+type=Camera
+id=45
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor45]
+enable=1
+type=Camera
+id=46
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor46]
+enable=1
+type=Camera
+id=47
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor47]
+enable=1
+type=Camera
+id=48
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor48]
+enable=1
+type=Camera
+id=49
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[sensor49]
+enable=1
+type=Camera
+id=50
+location=45.293701447;-75.8303914499;48.1557479338
+description=Aisle Camera
+coordinate=5.2;10.1;11.2
+
+[place0]
+enable=1
+id=0
+type=intersection/road
+name=HWY_20_AND_LOCUST__EBA
+location=30.32;-40.55;100.0
+coordinate=1.0;2.0;3.0
+place-sub-field1=C_127_158
+place-sub-field2=Lane 1
+place-sub-field3=P1
+
+
+[analytics0]
+enable=1
+id=XYZ
+description=Vehicle Detection and License Plate Recognition
+source=OpenALR
+version=1.0
+
